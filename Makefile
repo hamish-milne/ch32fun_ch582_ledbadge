@@ -2,7 +2,7 @@ all : flash
 
 TARGET:=ledbadge
 TARGET_MCU:=CH582
-TARGET_MCU_PACKAGE:=CH582M
+TARGET_MCU_PACKAGE:=CH582F
 
 include ../ch32fun/ch32fun/ch32fun.mk
 
