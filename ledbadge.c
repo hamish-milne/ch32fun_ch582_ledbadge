@@ -5,11 +5,14 @@
 
 #define LED                PA8 // DEBUG led on board, not on badge
 #define PIN_CHARGE_STT     PA0
+#define PIN_CHARGE_STT_INT PIN_CHARGE_STT
 #define PIN_KEY1           PA1
 #define PIN_KEY1_INT       PIN_KEY1
 #define PIN_KEY2           PB22
 #define PIN_KEY2_INT       PB8 // ch582 is weird, PB22 interrupt comes in on PB8 bit in irq flag
 #define ADC_VBAT_CHANNEL   14
+
+#define IS_CHARGING        (funDigitalRead(PIN_CHARGE_STT) == 0)
 
 typedef enum {
 	ADC_FREQ_DIV_10 = 0b00,		// 32/10 = 3.2MHz
@@ -30,12 +33,40 @@ typedef enum {
 	IRQ_RTC,
 	IRQ_KEY1,
 	IRQ_KEY2,
+	IRQ_CHARGE_STT,
 } irq_source;
 
 static volatile irq_source wakeup_source;
 static volatile int gs_vbat_mV;
 
+#define LINE_A PA15
+#define LINE_B PB18
+#define LINE_C PB0
+#define LINE_D PB7
+#define LINE_E PA12
+#define LINE_F PA10
+#define LINE_G PA11
+#define LINE_H PB9
+#define LINE_I PB8
+#define LINE_J PB15
+#define LINE_K PB14
+#define LINE_L PB13
+#define LINE_M PB12
+#define LINE_N PB5
+#define LINE_O PA4
+#define LINE_P PB3
+#define LINE_Q PB4
+#define LINE_R PB2
+#define LINE_S PB1
+#define LINE_T PB6 // or PB23
+#define LINE_U PB21
+#define LINE_V PB20
+#define LINE_W PB19
 
+
+// this blink should be removed after development is complete, just for debug
+// however LowPowerIdle needs to be called once before LowPower(Sleep) works,
+// so that will have to be added in main()
 void blink(int n) {
 	for(int i = n-1; i >= 0; i--) {
 		funDigitalWrite( LED, FUN_LOW ); // Turn on LED
@@ -51,8 +82,12 @@ void GPIOA_IRQHandler() {
 	int status = R16_PA_INT_IF;
 	R16_PA_INT_IF = status; // acknowledge
 
-	if(status & PIN_KEY1) {
+	if(status & PIN_KEY1_INT) {
 		wakeup_source = IRQ_KEY1;
+	}
+
+	if(status & PIN_CHARGE_STT_INT) {
+		wakeup_source = IRQ_CHARGE_STT;
 	}
 }
 
@@ -90,6 +125,7 @@ void GPIOSetup() {
 	allPinPullUp();
 	funPinMode( PIN_KEY1, GPIO_CFGLR_IN_PD ); // Set PIN_KEY1 to input, pulldown as keypress is to vcc
 	funPinMode( PIN_KEY2, GPIO_CFGLR_IN_PU ); // Set PIN_KEY2 to input, pullup as keypress is to gnd
+	funPinMode( PIN_CHARGE_STT, GPIO_CFGLR_IN_PU ); // Set PIN_CHARGE_STT to input, pullup as connecting charger makes this go to gnd
 
 	// key1 interrupt
 	R16_PA_INT_MODE |= (PIN_KEY1_INT); // edge mode, should go to ch32fun.h
@@ -98,6 +134,14 @@ void GPIOSetup() {
 	NVIC_EnableIRQ(GPIOA_IRQn);
 	R16_PA_INT_IF = (PIN_KEY1_INT); // reset key1 flag
 	R16_PA_INT_EN |= (PIN_KEY1_INT); // enable key1 interrupt
+
+	// charge stt interrupt
+	R16_PA_INT_MODE |= (PIN_CHARGE_STT_INT); // edge mode, should go to ch32fun.h
+	funDigitalWrite(PIN_CHARGE_STT, FUN_LOW); // falling edge
+
+	NVIC_EnableIRQ(GPIOA_IRQn);
+	R16_PA_INT_IF = (PIN_CHARGE_STT_INT); // reset key1 flag
+	R16_PA_INT_EN |= (PIN_CHARGE_STT_INT); // enable key1 interrupt
 
 	// key2 interrupt
 	R16_PIN_ALTERNATE |= RB_PIN_INTX; // set PB8 interrupt to PB22 (PIN_KEY2_INT points to PB8)
@@ -127,6 +171,26 @@ void update_battery_voltage_mV() {
 	gs_vbat_mV = ((1050 * R16_ADC_DATA) / 512) - (1050 * 3); // -12dB: vref * (raw/512 - 3)
 }
 
+void scheduled_wakeup_task() {
+	blink(1);
+	update_battery_voltage_mV();
+}
+
+void key1_pressed() {
+
+}
+
+void key2_pressed() {
+	blink(2);
+	// if(IS_CHARGING) {
+		jump_isprom();
+	// }
+}
+
+void charger_connected() {
+
+}
+
 
 int main() {
 	SystemInit();
@@ -146,17 +210,18 @@ int main() {
 	blink(5);
 
 	while(1) {
-		// only housekeeping here, we go to sleep for a bit after this
 		switch(wakeup_source) {
 		case IRQ_RTC:
-			blink(1);
-			update_battery_voltage_mV();
+			scheduled_wakeup_task();
 			break;
 		case IRQ_KEY1:
+			key1_pressed();
 			break;
 		case IRQ_KEY2:
-			blink(2);
-			jump_isprom();
+			key2_pressed();
+			break;
+		case IRQ_CHARGE_STT:
+			charger_connected();
 			break;
 		case IRQ_NONE: // fall-through
 		default:
