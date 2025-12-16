@@ -72,21 +72,50 @@ static u32 led_lines[] = {
 #define NLINES (sizeof(led_lines) / sizeof(u32))
 
 
-void blink(int n) {
+//      0     1     2     3     4     5     6     7     8     9
+//   -----------------------------------------------------------------
+// 0 | 0,2 | 0,1 | 1,0 | 1,2 | 2,0 | 2,1 | 3,0 | 3,1 | 4,0 | 4,1 | ...
+//   -----------------------------------------------------------------
+// 1 | 0,3 | 0,4 | 1,3 | 1,4 | 2,3 | 2,4 | 3,2 | 3,4 | 4,2 | 4,3 | ...
+//   -----------------------------------------------------------------
+// 2 | 0,5 | 0,6 | 1,5 | 1,6 | 2,5 | 2,6 | 3,5 | 3,6 | 4,5 | 4,6 | 5,4 | 5,6 | 6,4 | 6,5
+//   -----------------------------------------------------------------
+// 3 | 0,7 | 0,8 | ...
+//
+void blink(int ms, int x, int y) {
 	for(int i = 0; i < NLINES; i++) {
 		funPinMode( led_lines[i], GPIO_CFGLR_IN_FLOAT );
 	}
 
-	for(int i = n-1; i >= 0; i--) {
-		funPinMode( LINE_E, GPIO_CFGLR_OUT_2Mhz_PP );
-		funPinMode( LINE_F, GPIO_CFGLR_OUT_2Mhz_PP );
-		funDigitalWrite(LINE_E, FUN_HIGH);
-		funDigitalWrite(LINE_F, FUN_LOW);
-		LowPowerIdle( MS_TO_RTC(3) );
-		funPinMode( LINE_E, GPIO_CFGLR_IN_FLOAT );
-		funPinMode( LINE_F, GPIO_CFGLR_IN_FLOAT );
-		if(i) LowPowerIdle( MS_TO_RTC(97) );
+	// wrap around
+	x %= 44;
+	y %= 11;
+
+	// [0,0] and [1,0] are swapped
+	if(y == 0) {
+		x = (x == 0) ? 1:
+			(x == 1) ? 0:
+					   x;
 	}
+
+	// translate x,y to led line
+	int x_line = x / 2;
+	int y_line = y * 2;
+	if(x % 2) {
+		y_line++;
+	}
+	if(x_line <= y_line) {
+		y_line++;
+	}
+
+	// now blink
+	funPinMode( led_lines[x_line], GPIO_CFGLR_OUT_2Mhz_PP );
+	funPinMode( led_lines[y_line], GPIO_CFGLR_OUT_2Mhz_PP );
+	funDigitalWrite(led_lines[x_line], FUN_HIGH);
+	funDigitalWrite(led_lines[y_line], FUN_LOW);
+	LowPowerIdle( MS_TO_RTC(ms) );
+	funPinMode( led_lines[x_line], GPIO_CFGLR_IN_FLOAT );
+	funPinMode( led_lines[y_line], GPIO_CFGLR_IN_FLOAT );
 }
 
 
@@ -178,24 +207,27 @@ void update_battery_voltage_mV() {
 }
 
 void scheduled_wakeup_task() {
-	blink(1);
+	blink(1, 0,0);
+	blink(1, 43,0);
+	blink(1, 43,10);
+	blink(1, 0,10);
 	update_battery_voltage_mV();
 }
 
 void key1_pressed() {
-	blink(3);
+	blink(1, 23,5);
 }
 
 void key2_pressed() {
-	blink(2);
-	if(IS_CHARGING) {
+	blink(1, 23,5);
+	// if(IS_CHARGING) {
 		DCDCEnable(); // this seems to be needed!?
 		jump_isprom();
-	}
+	// }
 }
 
 void charger_connected() {
-	blink(3);
+	blink(1, 23,5);
 }
 
 
@@ -212,7 +244,7 @@ int main() {
 	SleepInit(); // Enable wakeup from sleep by RTC, and enable RTC IRQ
 
 	// Some one-off startup stuff
-	blink(5);
+	blink(1, 23,5); // middle
 
 	while(1) {
 		switch(wakeup_source) {
