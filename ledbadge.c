@@ -1,7 +1,11 @@
 #include <stdio.h>
 #include "ch32fun.h"
 
+#define MATRIX_NROW        11
+#define MATRIX_NCOL        44
 #define WAKEUP_INTERVAL_MS (3 * 1000) // 3 seconds
+#define FB_NCOL            (MATRIX_NCOL /2) // number of columns in framebuffer
+#define FB_COL_DURATION_MS 1 // time per column to be lit
 
 #define PIN_CHARGE_STT     PA0
 #define PIN_CHARGE_STT_INT PIN_CHARGE_STT
@@ -37,6 +41,7 @@ typedef enum {
 
 static volatile irq_source wakeup_source;
 static volatile int gs_vbat_mV;
+static volatile uint32_t framebuffer[FB_NCOL];
 
 #define LINE_A PA15
 #define LINE_B PB18
@@ -84,8 +89,8 @@ static u32 led_lines[] = {
 //
 int xy_to_yline(int x, int y) {
 	// wrap around
-	x %= 44;
-	y %= 11;
+	x %= MATRIX_NCOL;
+	y %= MATRIX_NROW;
 
 	// [0,0] and [1,0] are swapped
 	if(y == 0) {
@@ -139,7 +144,7 @@ void blink_2col(int ms, int col, uint32_t y_coords) {
 
 	// now gnd the y coordinates
 	int x = col * 2;
-	for(int i = 0; i < (2*11); i++) {
+	for(int i = 0; i < (2*MATRIX_NCOL); i++) {
 		if(y_coords & 1) {
 			int y_line = xy_to_yline(x,i);
 			funPinMode( led_lines[y_line], GPIO_CFGLR_OUT_2Mhz_PP );
@@ -152,6 +157,12 @@ void blink_2col(int ms, int col, uint32_t y_coords) {
 	LowPowerIdle( MS_TO_RTC(ms) );
 	for(int i = 0; i < NLINES; i++) {
 		funPinMode( led_lines[i], GPIO_CFGLR_IN_FLOAT );
+	}
+}
+
+void blink_framebuffer() {
+	for(int i = 0; i < FB_NCOL; i++) {
+		blink_2col(FB_COL_DURATION_MS, i, framebuffer[i]);
 	}
 }
 
@@ -181,8 +192,7 @@ void GPIOB_IRQHandler() {
 }
 
 __INTERRUPT
-void RTC_IRQHandler(void)
-{
+void RTC_IRQHandler() {
 	// clear trigger flag
 	R8_RTC_FLAG_CTRL = RB_RTC_TRIG_CLR;
 	wakeup_source = IRQ_RTC;
@@ -249,16 +259,22 @@ void scheduled_wakeup_task() {
 	blink_single(1, 43,10);
 	blink_single(1, 0,10);
 	blink_2col(1, 1, 0b11111111111); // x=2
-	blink_2col(1, 20, (0b11111111111 << 11)); // x=41
+	blink_2col(1, 20, (0b11111111111 << MATRIX_NROW)); // x=41
 	update_battery_voltage_mV();
 }
 
 void key1_pressed() {
-	blink_2col(1, 21, 0b11 << 11); // x=43
+	blink_2col(1, 21, 0b11 << MATRIX_NROW); // x=43
+	for(int i = 0; i < FB_NCOL; i++) {
+		framebuffer[i] = 0xFFFFFFFF;
+	}
+	for(int s = 0; s < 10; s++) {
+		blink_framebuffer();
+	}
 }
 
 void key2_pressed() {
-	blink_2col(1, 21, 0b110000 << 11); // x=43
+	blink_2col(1, 21, 0b110000 << MATRIX_NROW); // x=43
 	// if(IS_CHARGING) {
 		DCDCEnable(); // this seems to be needed!?
 		jump_isprom();
@@ -266,7 +282,7 @@ void key2_pressed() {
 }
 
 void charger_connected() {
-	blink_2col(1, 21, 0b11110000000 << 11); // x=43
+	blink_2col(1, 21, 0b11110000000 << MATRIX_NROW); // x=43
 }
 
 
