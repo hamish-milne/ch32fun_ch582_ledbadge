@@ -14,6 +14,65 @@
 #define PIN_KEY2_INT       PB8 // ch582 is weird, PB22 interrupt comes in on PB8 bit in irq flag
 #define PIN_VBAT_ADC       PA5
 
+// For now copied from ch32fun.LowPowerSleep, since we don't want the RTCTrigger() call in there.
+RV_STATIC_INLINE void BigSleep(uint16_t power_plan) 
+{
+#if defined(CH570_CH572) && (FUNCONF_POWERED_BY_V5PIN == 1)
+	power_plan |= RB_PWR_LDO5V_EN;
+#endif
+
+#ifdef CH570_CH572
+#if ( CLK_SOURCE_CH5XX == CLK_SOURCE_PLL_75MHz ) || ( CLK_SOURCE_CH5XX == CLK_SOURCE_PLL_100MHz )
+	//if system clock is higher than 60Mhz, it need to be reduced before sleep.
+	SYS_SAFE_ACCESS
+	(
+		R8_CLK_SYS_CFG = CLK_SOURCE_PLL_60MHz;
+	);
+#endif
+#else
+	SYS_SAFE_ACCESS
+	(
+		R8_BAT_DET_CTRL = 0;
+		R8_XT32K_TUNE = (R16_RTC_CNT_32K > 0x3fff) ? (R8_XT32K_TUNE & 0xfc) | 0x01 : R8_XT32K_TUNE;
+		R8_XT32M_TUNE = (R8_XT32M_TUNE & 0xfc) | 0x03;
+	);
+#endif
+
+	NVIC->SCTLR |= (1 << 2); //deep sleep
+	SYS_SAFE_ACCESS
+	(
+		R8_SLP_POWER_CTRL |= RB_RAM_RET_LV;
+		R16_POWER_PLAN = RB_PWR_PLAN_EN | RB_PWR_CORE | power_plan;
+		R8_PLL_CONFIG |= (1 << 5);
+	);
+	
+	NVIC->SCTLR &= ~(1 << 3); // wfi
+	asm volatile ("wfi\nnop\nnop" );
+
+#ifdef CH570_CH572
+#if ( CLK_SOURCE_CH5XX == CLK_SOURCE_PLL_75MHz ) || ( CLK_SOURCE_CH5XX == CLK_SOURCE_PLL_100MHz )
+	//machine delay for a while.
+	uint16_t i = 400;
+	do {
+		asm volatile("nop");
+	} while(i--);
+
+	//get system clock back to normal
+	SYS_SAFE_ACCESS
+	(
+		R8_CLK_SYS_CFG = CLK_SOURCE_CH5XX;
+	);
+#endif
+#else
+	SYS_SAFE_ACCESS
+	(
+		R16_POWER_PLAN &= ~RB_XT_PRE_EN;
+		R8_PLL_CONFIG &= ~(1 << 5);
+		R8_XT32M_TUNE = (R8_XT32M_TUNE & 0xfc) | 0x01;
+	);
+#endif
+}
+
 #pragma region Layers
 
 typedef enum {
@@ -74,7 +133,7 @@ static inline uint32_t timediff(uint32_t a, uint32_t b) {
 }
 
 static int rtc_rate(layer_result_t *state, uint32_t cyc, uint32_t *prev_time) {
-    if (state->events & EVENTS_RTC == 0) {
+    if (!(state->events & EVENTS_RTC)) {
         return 0;
     }
     uint32_t rtc_alarm = state->rtc_now + cyc;
@@ -97,9 +156,10 @@ static void layer_next(layer_result_t *state, int next) {
     }
 }
 
-static void run_layers(events_t events) {
+static layer_result_t run_layers(events_t events) {
     layer_result_t state = { R32_RTC_CNT_32K, 0, events, 0 };
     layer_next(&state, 0);
+    return state;
 }
 
 #pragma endregion
@@ -264,23 +324,13 @@ void TMR0_IRQHandler() {
     NVIC_restore_IRQs(irqs);
 }
 
-static void ScreenSetup() {
-    R32_TMR0_CNT_END = FUNCONF_SYSTEM_CORE_CLOCK / (RR_BASE * RR_DIV);
-	// R8_TMR0_CTRL_MOD = RB_TMR_ALL_CLEAR;
-	R8_TMR0_CTRL_MOD = RB_TMR_COUNT_EN;
-	R8_TMR0_INTER_EN = RB_TMR_IE_CYC_END;
-    NVIC_EnableIRQ(TMR0_IRQn);
-}
-
 static int screen_irq_active = 0;
 
 static void ScreenLayer(layer_result_t *state, void *self, int next) {
     if (state->events & EVENTS_RESET) {
         R32_TMR0_CNT_END = FUNCONF_SYSTEM_CORE_CLOCK / (RR_BASE * RR_DIV);
-        // R8_TMR0_CTRL_MOD = RB_TMR_ALL_CLEAR;
         R8_TMR0_CTRL_MOD = RB_TMR_COUNT_EN;
         R8_TMR0_INTER_EN = RB_TMR_IE_CYC_END;
-            // NVIC_EnableIRQ(TMR0_IRQn);
     }
     layer_next(state, next);
     if ((state->active & ACTIVE_SCREEN) ^ screen_irq_active) {
@@ -478,7 +528,6 @@ static void BounceLayer(layer_result_t *state, void *self, int next) {
             }
             active_fb[x] = v;
         }
-        // active_fb[0] = 0xffff;
     }
     layer_next(state, next);
 }
@@ -499,6 +548,7 @@ static void BtlLayer(layer_result_t *state, void *self, int next) {
 static layer_t ctrl_layers[] = {
     &GolLayer,
     &BounceLayer,
+    NULL,
 };
 #define CTRL_LAYERS_COUNT  (sizeof(ctrl_layers)/sizeof(layer_t));
 static int ctrl_layer_idx = 0;
@@ -524,7 +574,13 @@ int main() {
 
     run_layers(EVENTS_RESET);
     while (1) {
-        run_layers(EVENTS_NONE);
-        __WFI(); // 'Wait for interrupt', i.e. sleep until something happens
+        layer_result_t state = run_layers(EVENTS_NONE);
+        if (state.active) {
+            __WFI();
+        } else {
+            BigSleep(0); // TODO: determine a good power plan here - what RAM do we keep, if any?
+            __WFI();
+            DCDCEnable();
+        }
     }
 }

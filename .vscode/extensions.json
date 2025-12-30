@@ -1,0 +1,7 @@
+{
+    "recommendations": [
+        "jnoortheen.nix-ide",
+        "ms-vscode.makefile-tools",
+        "ms-vscode.cpptools"
+    ]
+}
