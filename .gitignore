@@ -3,3 +3,6 @@
 *.hex
 *.lst
 *.elf
+build
+.vscode/compile_commands.json
+.xmake
