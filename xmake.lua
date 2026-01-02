@@ -1,12 +1,31 @@
+-- By default xmake checks whether flags are supported by the host compiler.
+-- This actually works fine for our configuration, but it does slow down
+-- the first build a little, so you can uncomment this line to disable it.
+--set_policy("check.auto_ignore_flags", false)
+
+-- We're only building for one target, so disable intermediate directories
+set_policy("build.intermediate_directory", false)
+
+-- Define a custom toolchain for RISC-V embedded targets.
+-- This lets us compile for both the host and the target.
 toolchain("embed", function()
     set_kind("standalone")
     local PREFIX = "riscv64-unknown-none-elf-"
+    -- Let xmake detect the tools based on the prefix
     set_cross(PREFIX)
+    -- Normally xmake expects cross-toolchains to specify an sdkdir,
+    -- but our nixpkgs toolchains just add everything to the PATH.
+    -- So we just tell xmake to find the tools directly.
     on_check(function(toolchain)
         import("lib.detect.find_program")
         return find_program(PREFIX.."gcc")
     end)
+    -- We don't want any standard libraries or startup files.
+    -- This option is added here so that check_flags works correctly.
+    add_ldflags("-nostdlib")
 end)
+
+-- xmake doesn't expose `select()`, which is why these functions look like this.
 
 local function includes(haystack, needle, ...)
     if not needle and #{...} == 0 then
@@ -31,7 +50,6 @@ end
 function ch32fun_config(config)
     local targetMcu = config.TARGET_MCU
     if not targetMcu then error("no TARGET_MCU") end
-    local cFlags = {}
     local defines = {}
     local targetMcuPackage = config.TARGET_MCU_PACKAGE
     local mcuPackage = config.MCU_PACKAGE
@@ -225,29 +243,21 @@ function ch32fun_config(config)
         "-fdata-sections",
         "-fmessage-length=0",
         "-msmall-data-limit=8",
-        "-static-libgcc",
         "-nostdlib",
-        "-Wall"
+        "-Wall",
+        -- arch and abi need to be specified together
+        "-march="..arch.." -mabi="..abi
     }
-    for k,v in pairs(cFlags) do
-        cFlags_array[#cFlags_array+1] = "-"..k.."="..v
-    end
+    add_cflags(cFlags_array)
+    add_ldflags(cFlags_array)
+    add_ldflags(
+        "-Wl,--print-memory-usage",
+        "-Wl,--gc-sections"
+    )
     local defines_array = {}
     for k,v in pairs(defines) do
         defines_array[#defines_array+1] = k.."="..v
     end
-    -- Due to cross-compiling, xmake incorrectly thinks the flags are wrong:
-    local archFlags = {"-march="..arch, "-mabi="..abi}
-    add_cflags(archFlags, { force = true })
-    add_ldflags(archFlags, { force = true })
-
-    add_cflags(cFlags_array)
-    add_ldflags(cFlags_array)
-    add_ldflags(
-        "-lgcc",
-        "-Wl,--print-memory-usage",
-        "-Wl,--gc-sections"
-    )
     add_defines(defines_array)
 end
 
@@ -286,6 +296,7 @@ rule("generate-ld", function ()
             }
         )
         batchcmds:mkdir(path.directory(out))
+        batchcmds:show_progress(opt.progress, "${color.build.object}processing linker script %s", sourcefile)
         batchcmds:vrunv(cmd)
     end)
 end)
@@ -305,6 +316,7 @@ rule("firmware-image", function ()
     end)
     on_buildcmd_file(function (target, batchcmds, sourcefile, opt)
         local objcopy = target:tool("objcopy")
+        batchcmds:show_progress(opt.progress, "${color.build.target}generating %s", sourcefile..".bin")
         batchcmds:vrunv(objcopy, {
             "-R.storage", -- Exclude the external flash section
             "-Obinary", -- Output raw binary
