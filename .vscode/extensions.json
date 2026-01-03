@@ -1,7 +1,6 @@
 {
     "recommendations": [
         "jnoortheen.nix-ide",
-        "ms-vscode.makefile-tools",
         "ms-vscode.cpptools",
         "sumneko.lua",
         "tboox.xmake-vscode"
