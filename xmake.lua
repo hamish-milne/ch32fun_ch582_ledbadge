@@ -23,6 +23,11 @@ toolchain("embed", function()
     -- We don't want any standard libraries or startup files.
     -- This option is added here so that check_flags works correctly.
     add_ldflags("-nostdlib")
+
+    -- Pull in include and library paths from the environment,
+    -- which are set by the nix shell.
+    add_includedirs(os.getenv("TARGET_INCDIR"))
+    add_linkdirs(os.getenv("TARGET_LIBDIR"))
 end)
 
 -- xmake doesn't expose `select()`, which is why these functions look like this.
@@ -299,6 +304,51 @@ rule("generate-ld", function ()
         batchcmds:show_progress(opt.progress, "${color.build.object}processing linker script %s", sourcefile)
         batchcmds:vrunv(cmd)
     end)
+end)
+
+target("minichlink-obj", function()
+    set_kind("object")
+    local PREFIX = "./ch32fun/minichlink/"
+    add_files(
+        PREFIX.."minichlink.c",
+        PREFIX.."pgm-wch-linke.c",
+        PREFIX.."pgm-wch-isp.c",
+        PREFIX.."pgm-esp32s2-ch32xx.c",
+        PREFIX.."nhc-link042.c",
+        PREFIX.."ardulink.c",
+        PREFIX.."serial_dev.c",
+        PREFIX.."pgm-b003fun.c",
+        PREFIX.."minichgdb.c",
+        PREFIX.."chips.c",
+        PREFIX.."ch5xx.c"
+    )
+    add_includedirs(PREFIX)
+    add_defines("MINICHLINK", "CH32V003")
+    add_cflags("-O0", "-g3", "-Wall", "-Wno-unused-function", "-fmessage-length=0")
+    add_cflags("-fPIC")
+    if is_plat("windows") then
+        add_defines("_WIN32_WINNT=0x0600")
+        add_links("pthread", "usb-1.0", "setupapi", "ws2_32")
+        add_cflags("-Os", "-s")
+    elseif is_plat("linux") then
+        add_links("pthread", "usb-1.0", "udev")
+    elseif is_plat("macosx") then
+        add_defines("__MACOSX__")
+        add_links("pthread", "CoreFoundation", "IOKit", "Security")
+        add_cflags("-Wno-asm-operand-widths", "-Wno-deprecated-declarations", "-Wno-deprecated-non-prototype")
+    end
+end)
+
+target("minichlink", function()
+    set_kind("binary")
+    add_deps("minichlink-obj")
+    set_policy("build.fence", true)
+end)
+
+target("minichlink-shared", function()
+    set_kind("shared")
+    add_deps("minichlink-obj")
+    set_basename("minichlink")
 end)
 
 -- Creates a .bin file from a given .elf source.
