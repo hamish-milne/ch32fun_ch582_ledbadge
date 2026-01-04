@@ -13,6 +13,7 @@ host.mkShell rec {
     host.libusb1
     host.libudev-zero
     host.xmake
+    host.ffmpeg
   ];
   depsBuildTarget = [
     # We use 'unwrapped' because we're not compiling for the host system.
