@@ -133,14 +133,15 @@ static inline uint32_t timediff(uint32_t a, uint32_t b) {
 }
 
 static int rtc_rate(layer_result_t *state, uint32_t cyc, uint32_t *prev_time) {
-    if (!(state->events & (EVENTS_RTC | EVENTS_RESET))) {
-        return 0;
-    }
+    // TODO: How to re-enable this?
+    // if (!(state->events & (EVENTS_RTC | EVENTS_RESET))) {
+    //     return 0;
+    // }
     uint32_t rtc_alarm = state->rtc_now + cyc;
     if (rtc_alarm > RTC_MAX_COUNT) {
         rtc_alarm -= RTC_MAX_COUNT;
     }
-    if (rtc_alarm > 0 && (!state->rtc_alarm || timediff(rtc_alarm, state->rtc_now) < timediff(state->rtc_alarm, state->rtc_now))) {
+    if (rtc_alarm > 0 && (!state->rtc_alarm || (timediff(rtc_alarm, state->rtc_now) < timediff(state->rtc_alarm, state->rtc_now)))) {
         state->rtc_alarm = rtc_alarm;
     }
     if (timediff(state->rtc_now, *prev_time) >= cyc) {
@@ -534,6 +535,37 @@ static void BounceLayer(layer_result_t *state, void *self, int next) {
 
 #pragma endregion
 
+#pragma region Bad Apple
+
+extern const char badapple[];
+extern const int badapple_size;
+
+static int badapple_frame;
+static uint32_t badapple_time = 0;
+
+static void BadappleLayer(layer_result_t *state, void *self, int next) {
+    state->active |= ACTIVE_SCREEN;
+    if (state->events & EVENTS_RESET) {
+        badapple_frame = 0;
+    }
+    if (rtc_rate(state, RTC_RATE(30), &badapple_time)) {
+        int frame_start = badapple_frame * 22 * 3;
+        for (int i = 0; i < 22; i++) {
+            int chunk_start = frame_start + i*3;
+            uint16_t b0 = badapple[chunk_start];
+            uint16_t b1 = badapple[chunk_start + 1];
+            uint16_t b2 = badapple[chunk_start + 2];
+            int chunk = i*2;
+            active_fb[chunk] = b0 | (b1 << 8);
+            active_fb[chunk + 1] = ((b1>>3) & 0b11111) | (b2 << 5);
+        }
+        badapple_frame = (badapple_frame + 1) % badapple_size;
+    }
+    layer_next(state, next);
+}
+
+#pragma endregion
+
 static void BtlLayer(layer_result_t *state, void *self, int next) {
     if (state->events & EVENTS_KEY2 && funDigitalRead(PIN_KEY1)) {
         DCDCEnable(); // this seems to be needed!?
@@ -548,6 +580,7 @@ static void BtlLayer(layer_result_t *state, void *self, int next) {
 static layer_t ctrl_layers[] = {
     &GolLayer,
     &BounceLayer,
+    &BadappleLayer,
     NULL,
 };
 #define CTRL_LAYERS_COUNT  (sizeof(ctrl_layers)/sizeof(layer_t));

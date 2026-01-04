@@ -14,7 +14,7 @@ local rawvideo = os.tmpfile()
 os.execv(
     "ffmpeg",
     {
-        "-i", "badapple.mp4",
+        "-i", source,
         "-vf", "crop=1444:361:0:400,scale=44:11",
         "-f", "rawvideo",
         "-video_size", "44x11",
@@ -32,24 +32,28 @@ local rawbytes = bytes(io.readfile(rawvideo, { encoding = "binary" }))
 os.rm(rawvideo)
 print("Raw video size (bytes): " .. rawbytes:size())
 
+local F_START = 40
+local F_END = 6509
+
 print("Converting to 1bit format...")
 -- ffmpeg has a bug that causes it to output 44x17 frames instead of 44x11
 -- frames when scaling down to small sizes.
 local frame_size_in = 44 * 17
 local frame_size_out = 22 * 3 -- 1-bit, 2 columns in 3 bytes
-local num_frames = rawbytes:size() // frame_size_in
+local num_frames = F_END - F_START + 1
 local outbytes = bytes(num_frames * frame_size_out)
 for i = 1, outbytes:size() do
     outbytes[i] = 0
 end
-for i = 0, num_frames - 1 do
+local out_frame = 0
+for i = F_START, F_END do -- Cut empty video
     local in_offset = i * frame_size_in
-    local out_offset = i * frame_size_out
+    local out_offset = out_frame * frame_size_out
     for x = 0, 21 do -- process 2 columns at a time
         local in_col = in_offset + (x * 2)
         local out_col = out_offset + (x * 3)
         for y = 0, 21 do
-            local in_byte_idx = in_col + ((y % 11) * 44) + 1
+            local in_byte_idx = in_col + ((y % 11) * 44) + (y // 11) + 1
             if rawbytes[in_byte_idx] > 0x30 then
                 local out_byte_idx = out_col + (y // 8) + 1
                 local out_bit_idx = y % 8
@@ -57,6 +61,7 @@ for i = 0, num_frames - 1 do
             end
         end
     end
+    out_frame = out_frame + 1
 end
 
 print("Writing output file...")
