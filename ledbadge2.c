@@ -133,7 +133,7 @@ static inline uint32_t timediff(uint32_t a, uint32_t b) {
 }
 
 static int rtc_rate(layer_result_t *state, uint32_t cyc, uint32_t *prev_time) {
-    if (!(state->events & EVENTS_RTC)) {
+    if (!(state->events & (EVENTS_RTC | EVENTS_RESET))) {
         return 0;
     }
     uint32_t rtc_alarm = state->rtc_now + cyc;
