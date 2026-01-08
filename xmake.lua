@@ -30,241 +30,270 @@ toolchain("embed", function()
     add_linkdirs(os.getenv("TARGET_LIBDIR"))
 end)
 
--- xmake doesn't expose `select()`, which is why these functions look like this.
+local arch_abi = {
+    rv32ec = "ilp32e",
+    rv32ec_zmmul = "ilp32e",
+    rv32imac = "ilp32",
+    rv32imafc = "ilp32f",
+}
 
-local function includes(haystack, needle, ...)
-    if not needle and #{...} == 0 then
-        return false
-    end
-    if string.find(haystack, needle) then
-        return true
-    end
-    return includes(haystack, ...)
+local ch32_packages = {
+    ["CHV300([234567])"] = {
+        arch = "rv32ec_zmmul",
+        defines = { CH32V00x = 1 },
+        variants = {{
+            ["3"] = {
+                flash_size_kb = 16,
+                ram_size_kb = 2,
+                arch = "rv32ec",
+            },
+            ["2"] = {
+                flash_size_kb = 16,
+                ram_size_kb = 4,
+            },
+            ["[45]"] = {
+                flash_size_kb = 32,
+                ram_size_kb = 6,
+            },
+            ["[67]"] = {
+                flash_size_kb = 62,
+                ram_size_kb = 8,
+            },
+        }},
+    },
+    ["CHV103([RC][68])"] = {
+        arch = "rv32imac",
+        defines = { CH32V10x = 1 },
+        variants = {{
+            ["[RC]8"] = {
+                flash_size_kb = 64,
+                ram_size_kb = 20,
+            },
+            ["C6"] = {
+                flash_size_kb = 32,
+                ram_size_kb = 10,
+            },
+        }}
+    },
+    ["CHX03[35][CFGR][678]"] = {
+        arch = "rv32imac",
+        defines = { CH32X03x = 1 },
+        flash_size_kb = 62,
+        ram_size_kb = 20,
+    },
+    ["CHL103[CFGK]8"] = {
+        arch = "rv32imac",
+        defines = { CH32L103 = 1 },
+        flash_size_kb = 62,
+        ram_size_kb = 20,
+    },
+    ["CHV20([38])[CFGKRW]([68BW])"] = {
+        arch = "rv32imac",
+        defines = { CH32V20x = 1 },
+        variants = {{
+            ["3"] = {
+                defines = { CH32V20x_D6 = 1 },
+            },
+            ["8"] = {
+                defines = { CH32V20x_D8 = 1 },
+            },
+        },{
+            ["6"] = {
+                flash_size_kb = 32,
+                ram_size_kb = 10,
+                ext_origin = "0x08008000",
+                ext_size_kb = 192,
+            },
+            ["8"] = {
+                flash_size_kb = 64,
+                ram_size_kb = 20,
+                ext_origin = "0x08010000",
+                ext_size_kb = 160,
+            },
+            ["[BW]"] = {
+                flash_size_kb = 128,
+                ram_size_kb = 32,
+                ext_origin = "0x08020000",
+                ext_size_kb = 352,
+            },
+        }},
+    },
+    ["CH32V30([37])[CFRVW]([BC])"] = {
+        arch = "rv32imafc",
+        defines = { CH32V30x = 1 },
+        variants = {{
+            ["3"] = {
+                defines = { CH32V30x_D8 = 1 },
+            },
+            ["7"] = {
+                defines = { CH32V30x_D8C = 1 },
+            },
+        },{
+            ["C"] = function (option)
+                local memory_split = option:dep("memory_split"):value()
+                return ({{
+                    flash_size_kb = 192,
+                    ram_size_kb = 128,
+                },{
+                    flash_size_kb = 224,
+                    ram_size_kb = 96,
+                },{
+                    flash_size_kb = 256,
+                    ram_size_kb = 64,
+                },{
+                    flash_size_kb = 288,
+                    ram_size_kb = 32,
+                }})[memory_split]
+            end,
+            ["B"] = {
+                flash_size_kb = 128,
+                ram_size_kb = 32,
+            },
+        }},
+    },
+    ["CH5([789])"] = {
+        arch = "rv32imac",
+        defines = { CH5xx = 1 },
+        has_highcode = true,
+        variants = {{
+            ["7([0123])"] = {
+                defines = { CH57x = 1 },
+                variants = {{
+                    ["[02]"] = {
+                        flash_size_kb = 240,
+                        ram_size_kb = 12,
+                        defines = { CH570_CH572 = 1 },
+                    },
+                    ["1"] = {
+                        flash_size_kb = 192,
+                        ram_size_kb = 18,
+                        has_dma_quirk = true,
+                        defines = { CH571_CH573 = 1 },
+                    },
+                    ["3"] = {
+                        flash_size_kb = 448,
+                        ram_size_kb = 18,
+                        has_dma_quirk = true,
+                        defines = { CH571_CH573 = 1 },
+                    },
+                }},
+            },
+            ["8([2345])"] = {
+                defines = { CH58x = 1 },
+                flash_size_kb = 448,
+                variants = {{
+                    ["[23]"] = {
+                        ram_size_kb = 32,
+                        defines = { CH582_CH583 = 1 },
+                    },
+                    ["4"] = {
+                        ram_size_kb = 96,
+                        defines = { CH584_CH585 = 1 },
+                    },
+                    ["5"] = {
+                        ram_size_kb = 128,
+                        defines = { CH584_CH585 = 1 },
+                    },
+                }},
+            },
+            ["9([12])"] = {
+                defines = { CH59x = 1, CH591_CH592 = 1 },
+                ram_size_kb = 26,
+                variants = {{
+                    ["1"] = {
+                        flash_size_kb = 192,
+                    },
+                    ["2"] = {
+                        flash_size_kb = 448,
+                    },
+                }},
+            },
+        }},
+    },
+    ["CH32H41([567])"] = {
+        arch = "rv32imafc",
+        defines = { CH32H4x = 1 },
+        ram_size_kb = 512,
+        has_coupled_ram = true,
+        variants = {{
+            ["[57]"] = {
+                flash_size_kb = 960,
+            },
+            ["6"] = {
+                flash_size_kb = 480,
+            },
+        }},
+    },
+}
+
+local function getFindResult(s, e, ...)
+    return s, e, {...}
 end
 
-local function startswith(haystack, needle, ...)
-    if not needle and #{...} == 0 then
-        return false
+local function match_ch32_package_part(target, variants, str, idx, parent)
+    for pattern, info in pairs(variants) do
+        local s, e, specs = getFindResult(string.find(str, "^"..pattern, idx))
+        if s then
+            local result = table.join(parent, info)
+            result.defines = table.join(parent.defines, info.defines)
+            result.variants = nil
+            if info.variants then
+                for vidx, spec in ipairs(specs) do
+                    local variant = info.variants[vidx]
+                    if type(variant) == "function" then
+                        variant = variant(target)
+                    end
+                    -- all variant specs need to be matched; no backtracking
+                    result, e = match_ch32_package_part(target, variant, str, e, result)
+                    if not result then
+                        return nil
+                    end
+                end
+            end
+            return result, e
+        end
     end
-    if string.find(haystack, needle) == 1 then
-        return true
-    end
-    return startswith(haystack, ...)
+    return nil
 end
 
-function ch32fun_config(config)
-    local targetMcu = config.TARGET_MCU
-    if not targetMcu then error("no TARGET_MCU") end
-    local defines = {}
-    local targetMcuPackage = config.TARGET_MCU_PACKAGE
-    local mcuPackage = config.MCU_PACKAGE
-    local targetMcuLd
-    local extOrigin
-    local targetMcuMemorySplit
-    local enableFpu = config.ENABLE_FPU
-    local isCh5xx
-    local arch = "rv32"
-    local abi = "ilp32"
-    if startswith(targetMcu, "CH32V00") then
-        if #targetMcu ~= 8 then
-            error("Unknown MCU "..targetMcuPackage)
+option("memory_split", function()
+    set_default(0)
+    set_showmenu(true)
+    set_description("Memory split option for CH32V30xC devices")
+    set_values(0, 1, 2, 3)
+end)
+
+option("target_mcu", function()
+    set_default("CH582F")
+    set_showmenu(true)
+    set_category("ch32fun")
+    set_description("Target MCU to build for")
+    add_deps("memory_split")
+    after_check(function (option)
+        local targetMcu = option:value()
+        local mcuInfo = match_ch32_package_part(option, ch32_packages, targetMcu, 1, {})
+        if not mcuInfo then
+            raise("Unknown MCU "..targetMcu)
         end
-        mcuPackage = mcuPackage or 1
-        if targetMcu == "CH32V003" then
-            arch = "rv32ec"
-        else
-            arch = "rv32ec_zmmul"
-            defines.CH32V00x = 1
+        local archFlags = "-march="..mcuInfo.arch.." -mabi="..arch_abi[mcuInfo.arch]
+        option:add("cflags", archFlags)
+        option:add("ldflags", archFlags)
+        local defines = table.join({
+            TARGET_MCU_PACKAGE = targetMcu,
+            HAS_HIGHCODE = mcuInfo.has_highcode or nil,
+            HAS_DMA_QUIRK = mcuInfo.has_dma_quirk or nil,
+            EXT_ORIGIN = mcuInfo.ext_origin or nil,
+            EXT_SIZE_KB = mcuInfo.ext_size_kb or nil,
+            FLASH_SIZE_KB = mcuInfo.flash_size_kb,
+            RAM_SIZE_KB = mcuInfo.ram_size_kb,
+        }, mcuInfo.defines)
+        local defines_array = {}
+        for k, v in pairs(defines) do
+            defines_array[#defines_array + 1] = k.."="..tostring(v)
         end
-        abi = "ilp32e"
-        if startswith(targetMcu, "CH32V003") then
-            targetMcuLd = 0
-        elseif startswith(targetMcu, "CH32V002") then
-            targetMcuLd = 5
-        elseif includes(targetMcu, "CH32V004", "CH32V005") then
-            targetMcuLd = 6
-        elseif includes(targetMcu, "CH32V006", "CH32V007") then
-            targetMcuLd = 7
-        else
-            error("unknown CH32V00x variant: "..targetMcu)
-        end
-    elseif startswith(targetMcu, "CH32V10") then
-        targetMcuPackage = targetMcuPackage or "CH32V103R8T6"
-        if #targetMcuPackage ~= 12 then
-            error("Unknown MCU "..targetMcuPackage)
-        end
-        arch = "rv32imac"
-        defines.CH32V10x = 1
-        if includes(targetMcuPackage, "R8", "C8") then
-            mcuPackage = 1
-        elseif includes(targetMcuPackage, "C6") then
-            mcuPackage = 2
-        end
-        targetMcuLd = 1
-    elseif startswith(targetMcu, "CH32X03") then
-        targetMcuPackage = targetMcuPackage or "CH32X035F8U6"
-        if #targetMcuPackage ~= 12 then
-            error("Unknown MCU "..targetMcuPackage)
-        end
-        arch = "rv32imac"
-        defines.CH32X03x = 1
-        if includes(targetMcuPackage, "F8", "R8", "K8", "C8", "G8", "G6", "F7") then
-            mcuPackage = 1
-        end
-        targetMcuLd = 4
-    elseif startswith(targetMcu, "CH32L103") then
-        targetMcuPackage = targetMcuPackage or "CH32L103C8T6"
-        if #targetMcuPackage ~= 12 then
-            error("Unknown MCU "..targetMcuPackage)
-        end
-        arch = "rv32imac"
-        defines.CH32L103 = 1
-        if includes(targetMcuPackage, "F8", "K8", "C8", "G8") then
-            mcuPackage = 1
-        end
-        targetMcuLd = 4
-    elseif startswith(targetMcu, "CH32V20") then
-        targetMcuPackage = targetMcuPackage or "CH32V203F6P6"
-        if #targetMcuPackage ~= 12 then
-            error("Unknown MCU "..targetMcuPackage)
-        end
-        arch = "rv32imac"
-        if includes(targetMcuPackage, "203RB") then
-            defines.CH32V20x_D8 = 1
-        elseif includes(targetMcuPackage, "308") then
-            defines.CH32V20x_D8W = 1
-            mcuPackage = 3
-        elseif includes(targetMcuPackage, "F8", "G8", "K8", "C8") then
-            mcuPackage = 1
-        elseif includes(targetMcuPackage, "F6", "G6", "K6", "C6") then
-            mcuPackage = 2
-        elseif includes(targetMcuPackage, "RB", "GB", "CB", "WB") then
-            mcuPackage = 3
-        else
-            defines.CH32V20x_D6 = 1
-        end
-        if mcuPackage == 1 then
-            extOrigin = "0x08010000"
-        elseif mcuPackage == 2 then
-            extOrigin = "0x08008000"
-        elseif mcuPackage == 3 then
-            extOrigin = "0x08020000"
-        end
-        targetMcuLd = 2
-    elseif startswith(targetMcu, "CH32V30") then
-        targetMcuPackage = targetMcuPackage or "CH32V307VCT6"
-        if #targetMcuPackage ~= 12 then
-            error("Unknown MCU "..targetMcuPackage)
-        end
-        mcuPackage = mcuPackage or 1
-        targetMcuMemorySplit = targetMcuMemorySplit or 3
-        enableFpu = enableFpu or 1
-        if enableFpu then
-            arch = "rc32imafc"
-            abi = "ilp32f"
-        else
-            arch = "rv32imac"
-            defines.DISABLED_FLOAT = 1
-        end
-        defines.CH32V30x = 1
-        defines.TARGET_MCU_MEMORY_SPLIT=targetMcuMemorySplit
-        if includes(targetMcuPackage, "RC", "VC", "WC") then
-            mcuPackage = 1
-        elseif includes(targetMcuPackage, "CB", "FB", "RB") then
-            mcuPackage = 2
-        end
-        if includes(targetMcuPackage, "303") then
-            defines.CH32V30x_D8 = 1
-        else
-            defines.CH32V30x_D8C = 1
-        end
-        targetMcuLd = 3
-    elseif startswith(targetMcu, "CH57") then
-        targetMcuPackage = targetMcuPackage or "CH570E"
-        if #targetMcuPackage ~= 6 then
-            error("Unknown MCU "..targetMcuPackage)
-        end
-        arch = "rv32imac"
-        defines.CH57x = 1
-        defines.CH5xx = 1
-        mcuPackage = tonumber(targetMcu:sub(5, 6))
-        defines['CH57x'..targetMcuPackage:sub(6, 7)] = 1
-        targetMcuLd = 10
-        isCh5xx = true
-    elseif startswith(targetMcu, "CH58") then
-        targetMcuPackage = targetMcuPackage or "CH582F"
-        if #targetMcuPackage ~= 6 then
-            error("Unknown MCU "..targetMcuPackage)
-        end
-        arch = "rv32imac"
-        defines.CH58x = 1
-        defines.CH5xx = 1
-        mcuPackage = tonumber(targetMcu:sub(5, 6))
-        defines['CH58x'..targetMcuPackage:sub(6, 7)] = 1
-        targetMcuLd = 8
-        isCh5xx = true
-    elseif startswith(targetMcu, "CH59") then
-        targetMcuPackage = targetMcuPackage or "CH592F"
-        if #targetMcuPackage ~= 6 then
-            error("Unknown MCU "..targetMcuPackage)
-        end
-        arch = "rv32imac"
-        defines.CH59x = 1
-        defines.CH5xx = 1
-        mcuPackage = tonumber(targetMcu:sub(5, 6))
-        defines['CH59x'..targetMcuPackage:sub(6, 7)] = 1
-        targetMcuLd = 9
-        isCh5xx = true
-    elseif startswith(targetMcu, "CH32H41") then
-        targetMcuPackage = targetMcuPackage or "CH32H417"
-        enableFpu = enableFpu or 1
-        mcuPackage = mcuPackage or 1
-        if enableFpu then
-            arch = "rc32imafc"
-            abi = "ilp32f"
-        else
-            arch = "rv32imac"
-            defines.DISABLED_FLOAT = 1
-        end
-        if includes(targetMcuPackage, "416") then
-            mcuPackage = 2
-        elseif includes(targetMcuPackage, "415") then
-            mcuPackage = 3
-        end
-        defines.CH32H41x = 1
-        targetMcuLd = 11
-    else
-        error("Unknown MCU "..targetMcu)
-    end
-    defines.TARGET_MCU = targetMcu
-    defines.MCU_PACKAGE = mcuPackage
-    defines.TARGET_MCU_PACKAGE = targetMcuPackage
-    defines.TARGET_MCU_LD = targetMcuLd
-    local cFlags_array = {
-        "-g",
-        "-Os",
-        "-flto",
-        "-ffunction-sections",
-        "-fdata-sections",
-        "-fmessage-length=0",
-        "-msmall-data-limit=8",
-        "-nostdlib",
-        "-Wall",
-        -- arch and abi need to be specified together
-        "-march="..arch.." -mabi="..abi
-    }
-    add_cflags(cFlags_array)
-    add_ldflags(cFlags_array)
-    add_ldflags(
-        "-Wl,--print-memory-usage",
-        "-Wl,--gc-sections"
-    )
-    local defines_array = {}
-    for k,v in pairs(defines) do
-        defines_array[#defines_array+1] = k.."="..v
-    end
-    add_defines(defines_array)
-end
+        option:add("defines", defines_array)
+    end)
+end)
 
 -- Add a file to be preprocessed with the compiler, then used as a linker script
 rule("generate-ld", function ()
@@ -334,7 +363,8 @@ target("minichlink-obj", function()
         add_links("pthread", "usb-1.0", "udev")
     elseif is_plat("macosx") then
         add_defines("__MACOSX__")
-        add_links("pthread", "CoreFoundation", "IOKit", "Security")
+        add_links("pthread")
+        add_frameworks("CoreFoundation", "IOKit", "Security")
         add_cflags("-Wno-asm-operand-widths", "-Wno-deprecated-declarations", "-Wno-deprecated-non-prototype")
     end
 end)
@@ -383,13 +413,28 @@ target("ledbadge", function ()
     add_rules("generate-ld")
     set_toolchains("embed")
     set_kind("binary")
-    ch32fun_config {
-        TARGET_MCU = "CH582",
-        TARGET_MCU_PACKAGE = "CH582F"
-    }
-    add_files("./ch32fun/ch32fun/ch32fun.ld", { rules = {"generate-ld", override = true} })
-    add_files("./ledbadge2.c", "./ch32fun/ch32fun/ch32fun.c")
+    add_options("target_mcu")
+    add_files("./ch32fun.ld", { rules = {"generate-ld", override = true} })
+    add_files("./ledbadge2.c", "./badapple.c", "./ch32fun/ch32fun/ch32fun.c")
     add_includedirs(".", "./ch32fun/ch32fun")
+
+    local cFlags_array = {
+        "-g",
+        "-Os",
+        "-flto",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-fmessage-length=0",
+        "-msmall-data-limit=8",
+        "-nostdlib",
+        "-Wall",
+    }
+    add_cflags(cFlags_array)
+    add_ldflags(cFlags_array)
+    add_ldflags(
+        "-Wl,--print-memory-usage",
+        "-Wl,--gc-sections"
+    )
 end)
 
 target("ledbadge-bin", function ()
