@@ -373,27 +373,21 @@ end)
 -- Creates a .bin file from a given .elf source.
 -- The source is derived from this target's dependency.
 rule("firmware-image", function ()
-    on_config(function (target)
+    on_buildcmd(function (target, batchcmds, opt)
         for _,input in pairs(target:deps()) do
             -- Make sure that the input gets fully built before running.
             -- This has to be done this way because we depend on the output binary, not a source file.
             input:set("policy", "build.fence", true)
-            -- This ensures that 'on_buildcmd_file' is run for our input file:
-            target:add("files", input:targetfile(), { rules = "firmware-image", always_added = true })
+            local sourcefile = input:targetfile()
+            local objcopy = target:tool("objcopy")
+            batchcmds:show_progress(opt.progress, "${color.build.target}generating %s", sourcefile..".bin")
+            batchcmds:vrunv(objcopy, {
+                "-R.storage", -- Exclude the external flash section
+                "-Obinary", -- Output raw binary
+                sourcefile,
+                sourcefile..".bin"
+            })
         end
-    end)
-    on_buildcmd_file(function (target, batchcmds, sourcefile, opt)
-        local objcopy = target:tool("objcopy")
-        batchcmds:show_progress(opt.progress, "${color.build.target}generating %s", sourcefile..".bin")
-        batchcmds:vrunv(objcopy, {
-            "-R.storage", -- Exclude the external flash section
-            "-Obinary", -- Output raw binary
-            sourcefile,
-            sourcefile..".bin"
-        })
-    end)
-    on_link(function ()
-        -- Make sure xmake doesn't try to run the linker
     end)
 end)
 
@@ -430,4 +424,19 @@ target("ledbadge-bin", function ()
     set_toolchains("embed")
     add_deps("ledbadge")
     add_rules("firmware-image")
+    set_kind("phony")
+end)
+
+target("flash", function ()
+    set_kind("phony")
+    add_deps("ledbadge", "ledbadge-bin", "minichlink")
+    on_buildcmd(function (target, batchcmds, opt)
+        local binfile = target:dep("ledbadge"):targetfile()..".bin"
+        local minichlink = target:dep("minichlink"):targetfile()
+        batchcmds:show_progress(opt.progress, "${color.build.object}flashing %s", binfile)
+        batchcmds:vexecv(minichlink, {
+            "-w", binfile,
+            "flash", "-b",
+        })
+    end)
 end)
