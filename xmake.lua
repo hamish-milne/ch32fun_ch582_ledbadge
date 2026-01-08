@@ -40,171 +40,172 @@ local arch_abi = {
 local ch32_packages = {
     ["CHV300([234567])"] = {
         arch = "rv32ec_zmmul",
-        defines = { CH32V00x = 1 },
+        CH32V00x = true,
         variants = {{
             ["3"] = {
-                flash_size_kb = 16,
-                ram_size_kb = 2,
+                FLASH_SIZE_KB = 16,
+                RAM_SIZE_KB = 2,
                 arch = "rv32ec",
             },
             ["2"] = {
-                flash_size_kb = 16,
-                ram_size_kb = 4,
+                FLASH_SIZE_KB = 16,
+                RAM_SIZE_KB = 4,
             },
             ["[45]"] = {
-                flash_size_kb = 32,
-                ram_size_kb = 6,
+                FLASH_SIZE_KB = 32,
+                RAM_SIZE_KB = 6,
             },
             ["[67]"] = {
-                flash_size_kb = 62,
-                ram_size_kb = 8,
+                FLASH_SIZE_KB = 62,
+                RAM_SIZE_KB = 8,
             },
         }},
     },
     ["CHV103([RC][68])"] = {
         arch = "rv32imac",
-        defines = { CH32V10x = 1 },
+        CH32V10x = true,
         variants = {{
             ["[RC]8"] = {
-                flash_size_kb = 64,
-                ram_size_kb = 20,
+                FLASH_SIZE_KB = 64,
+                RAM_SIZE_KB = 20,
             },
             ["C6"] = {
-                flash_size_kb = 32,
-                ram_size_kb = 10,
+                FLASH_SIZE_KB = 32,
+                RAM_SIZE_KB = 10,
             },
         }}
     },
     ["CHX03[35][CFGR][678]"] = {
         arch = "rv32imac",
-        defines = { CH32X03x = 1 },
-        flash_size_kb = 62,
-        ram_size_kb = 20,
+        CH32X03x = true,
+        FLASH_SIZE_KB = 62,
+        RAM_SIZE_KB = 20,
     },
     ["CHL103[CFGK]8"] = {
         arch = "rv32imac",
-        defines = { CH32L103 = 1 },
-        flash_size_kb = 62,
-        ram_size_kb = 20,
+        CH32L103 = true,
+        FLASH_SIZE_KB = 62,
+        RAM_SIZE_KB = 20,
     },
     ["CHV20([38])[CFGKRW]([68BW])"] = {
         arch = "rv32imac",
-        defines = { CH32V20x = 1 },
+        CH32V20x = true,
         variants = {{
             ["3"] = {
-                defines = { CH32V20x_D6 = 1 },
+                CH32V20x_D6 = true,
             },
             ["8"] = {
-                defines = { CH32V20x_D8 = 1 },
+                CH32V20x_D8 = true,
             },
         },{
             ["6"] = {
-                flash_size_kb = 32,
-                ram_size_kb = 10,
-                ext_origin = "0x08008000",
-                ext_size_kb = 192,
+                FLASH_SIZE_KB = 32,
+                RAM_SIZE_KB = 10,
+                EXT_ORIGIN = "0x08008000",
+                EXT_SIZE_KB = 192,
             },
             ["8"] = {
-                flash_size_kb = 64,
-                ram_size_kb = 20,
-                ext_origin = "0x08010000",
-                ext_size_kb = 160,
+                FLASH_SIZE_KB = 64,
+                RAM_SIZE_KB = 20,
+                EXT_ORIGIN = "0x08010000",
+                EXT_SIZE_KB = 160,
             },
             ["[BW]"] = {
-                flash_size_kb = 128,
-                ram_size_kb = 32,
-                ext_origin = "0x08020000",
-                ext_size_kb = 352,
+                FLASH_SIZE_KB = 128,
+                RAM_SIZE_KB = 32,
+                EXT_ORIGIN = "0x08020000",
+                EXT_SIZE_KB = 352,
             },
         }},
     },
     ["CH32V30([37])[CFRVW]([BC])"] = {
         arch = "rv32imafc",
-        defines = { CH32V30x = 1 },
+        CH32V30x = true,
         variants = {{
             ["3"] = {
-                defines = { CH32V30x_D8 = 1 },
+                CH32V30x_D8 = true,
             },
             ["7"] = {
-                defines = { CH32V30x_D8C = 1 },
+                CH32V30x_D8C = true,
             },
         },{
             ["C"] = function (option)
                 local memory_split = option:dep("memory_split"):value()
                 return ({{
-                    flash_size_kb = 192,
-                    ram_size_kb = 128,
+                    FLASH_SIZE_KB = 192,
+                    RAM_SIZE_KB = 128,
                 },{
-                    flash_size_kb = 224,
-                    ram_size_kb = 96,
+                    FLASH_SIZE_KB = 224,
+                    RAM_SIZE_KB = 96,
                 },{
-                    flash_size_kb = 256,
-                    ram_size_kb = 64,
+                    FLASH_SIZE_KB = 256,
+                    RAM_SIZE_KB = 64,
                 },{
-                    flash_size_kb = 288,
-                    ram_size_kb = 32,
+                    FLASH_SIZE_KB = 288,
+                    RAM_SIZE_KB = 32,
                 }})[memory_split]
             end,
             ["B"] = {
-                flash_size_kb = 128,
-                ram_size_kb = 32,
+                FLASH_SIZE_KB = 128,
+                RAM_SIZE_KB = 32,
             },
         }},
     },
     ["CH5([789])"] = {
         arch = "rv32imac",
-        defines = { CH5xx = 1 },
-        has_highcode = true,
+        CH5xx = true,
+        HAS_HIGHCODE = true,
         variants = {{
             ["7([0123])"] = {
-                defines = { CH57x = 1 },
+                CH57x = true,
                 variants = {{
                     ["[02]"] = {
-                        flash_size_kb = 240,
-                        ram_size_kb = 12,
-                        defines = { CH570_CH572 = 1 },
+                        FLASH_SIZE_KB = 240,
+                        RAM_SIZE_KB = 12,
+                        CH570_CH572 = true,
                     },
                     ["1"] = {
-                        flash_size_kb = 192,
-                        ram_size_kb = 18,
-                        has_dma_quirk = true,
-                        defines = { CH571_CH573 = 1 },
+                        FLASH_SIZE_KB = 192,
+                        RAM_SIZE_KB = 18,
+                        HAS_DMA_QUIRK = true,
+                        CH571_CH573 = true,
                     },
                     ["3"] = {
-                        flash_size_kb = 448,
-                        ram_size_kb = 18,
-                        has_dma_quirk = true,
-                        defines = { CH571_CH573 = 1 },
+                        FLASH_SIZE_KB = 448,
+                        RAM_SIZE_KB = 18,
+                        HAS_DMA_QUIRK = true,
+                        CH571_CH573 = true,
                     },
                 }},
             },
             ["8([2345])"] = {
-                defines = { CH58x = 1 },
-                flash_size_kb = 448,
+                CH58x = true,
+                FLASH_SIZE_KB = 448,
                 variants = {{
                     ["[23]"] = {
-                        ram_size_kb = 32,
-                        defines = { CH582_CH583 = 1 },
+                        RAM_SIZE_KB = 32,
+                        CH582_CH583 = true,
                     },
                     ["4"] = {
-                        ram_size_kb = 96,
-                        defines = { CH584_CH585 = 1 },
+                        RAM_SIZE_KB = 96,
+                        CH584_CH585 = true,
                     },
                     ["5"] = {
-                        ram_size_kb = 128,
-                        defines = { CH584_CH585 = 1 },
+                        RAM_SIZE_KB = 128,
+                        CH584_CH585 = true,
                     },
                 }},
             },
             ["9([12])"] = {
-                defines = { CH59x = 1, CH591_CH592 = 1 },
-                ram_size_kb = 26,
+                CH59x = true,
+                CH591_CH592 = true,
+                RAM_SIZE_KB = 26,
                 variants = {{
                     ["1"] = {
-                        flash_size_kb = 192,
+                        FLASH_SIZE_KB = 192,
                     },
                     ["2"] = {
-                        flash_size_kb = 448,
+                        FLASH_SIZE_KB = 448,
                     },
                 }},
             },
@@ -212,15 +213,15 @@ local ch32_packages = {
     },
     ["CH32H41([567])"] = {
         arch = "rv32imafc",
-        defines = { CH32H4x = 1 },
-        ram_size_kb = 512,
-        has_coupled_ram = true,
+        CH32H4x = true,
+        RAM_SIZE_KB = 512,
+        HAS_COUPLED_RAM = true,
         variants = {{
             ["[57]"] = {
-                flash_size_kb = 960,
+                FLASH_SIZE_KB = 960,
             },
             ["6"] = {
-                flash_size_kb = 480,
+                FLASH_SIZE_KB = 480,
             },
         }},
     },
@@ -235,7 +236,6 @@ local function match_ch32_package_part(target, variants, str, idx, parent)
         local s, e, specs = getFindResult(string.find(str, "^"..pattern, idx))
         if s then
             local result = table.join(parent, info)
-            result.defines = table.join(parent.defines, info.defines)
             result.variants = nil
             if info.variants then
                 for vidx, spec in ipairs(specs) do
@@ -278,20 +278,9 @@ option("target_mcu", function()
         local archFlags = "-march="..mcuInfo.arch.." -mabi="..arch_abi[mcuInfo.arch]
         option:add("cflags", archFlags)
         option:add("ldflags", archFlags)
-        local defines = table.join({
-            TARGET_MCU_PACKAGE = targetMcu,
-            HAS_HIGHCODE = mcuInfo.has_highcode or nil,
-            HAS_DMA_QUIRK = mcuInfo.has_dma_quirk or nil,
-            EXT_ORIGIN = mcuInfo.ext_origin or nil,
-            EXT_SIZE_KB = mcuInfo.ext_size_kb or nil,
-            FLASH_SIZE_KB = mcuInfo.flash_size_kb,
-            RAM_SIZE_KB = mcuInfo.ram_size_kb,
-        }, mcuInfo.defines)
-        local defines_array = {}
-        for k, v in pairs(defines) do
-            defines_array[#defines_array + 1] = k.."="..tostring(v)
+        for k,v in pairs(mcuInfo) do
+            option:set("configvar", k, v)
         end
-        option:add("defines", defines_array)
     end)
 end)
 
@@ -335,8 +324,8 @@ rule("generate-ld", function ()
     end)
 end)
 
-target("minichlink-obj", function()
-    set_kind("object")
+target("minichlink-static", function()
+    set_kind("static")
     local PREFIX = "./ch32fun/minichlink/"
     add_files(
         PREFIX.."minichlink.c",
@@ -371,13 +360,13 @@ end)
 
 target("minichlink", function()
     set_kind("binary")
-    add_deps("minichlink-obj")
+    add_deps("minichlink-static")
     set_policy("build.fence", true)
 end)
 
 target("minichlink-shared", function()
     set_kind("shared")
-    add_deps("minichlink-obj")
+    add_deps("minichlink-static")
     set_basename("minichlink")
 end)
 
@@ -385,14 +374,13 @@ end)
 -- The source is derived from this target's dependency.
 rule("firmware-image", function ()
     on_config(function (target)
-        local project = import("core.project.project")
-        -- Note that this doesn't work if we have multiple dependencies!
-        local input = project.target(target:get("deps"))
-        -- Make sure that the input gets fully built before running.
-        -- This has to be done this way because we depend on the output binary, not a source file.
-        input:set("policy", "build.fence", true)
-        -- This ensures that 'on_buildcmd_file' is run for our input file:
-        target:add("files", input:targetfile(), { rules = "firmware-image", always_added = true })
+        for _,input in pairs(target:deps()) do
+            -- Make sure that the input gets fully built before running.
+            -- This has to be done this way because we depend on the output binary, not a source file.
+            input:set("policy", "build.fence", true)
+            -- This ensures that 'on_buildcmd_file' is run for our input file:
+            target:add("files", input:targetfile(), { rules = "firmware-image", always_added = true })
+        end
     end)
     on_buildcmd_file(function (target, batchcmds, sourcefile, opt)
         local objcopy = target:tool("objcopy")
@@ -417,6 +405,7 @@ target("ledbadge", function ()
     add_files("./ch32fun.ld", { rules = {"generate-ld", override = true} })
     add_files("./ledbadge2.c", "./badapple.c", "./ch32fun/ch32fun/ch32fun.c")
     add_includedirs(".", "./ch32fun/ch32fun")
+    add_configfiles("./config.h.in", { prefixdir = ".." })
 
     local cFlags_array = {
         "-g",

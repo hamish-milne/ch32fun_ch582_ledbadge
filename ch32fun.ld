@@ -1,3 +1,4 @@
+#include "./config.h"
 ENTRY( InterruptVector )
 
 MEMORY
