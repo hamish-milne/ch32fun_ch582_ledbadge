@@ -75,6 +75,7 @@ RV_STATIC_INLINE void BigSleep(uint16_t power_plan)
 
 #pragma region Layers
 
+// These are the events that layers can respond to
 typedef enum {
     EVENTS_NONE = 0,
     EVENTS_KEY1 = 1 << 0,
@@ -86,6 +87,7 @@ typedef enum {
 
 static events_t g_events = EVENTS_NONE;
 
+// These flags allow layer code to request peripherals to be enabled
 typedef enum {
     ACTIVE_NONE = 0,
     ACTIVE_SCREEN = 1 << 1,
@@ -93,11 +95,16 @@ typedef enum {
     ACTIVE_USB = 1 << 3,
 } active_t;
 
+// These are flags set by layers to indicate actions they have taken
+typedef enum {
+    // If set, a frame is being prepared for drawing, and we should set DRAW_READY when done.
+    LF_DRAWING = (1 << 0),
+} layer_flags_t;
+
 typedef struct {
-    uint32_t rtc_now;
-    uint32_t rtc_alarm;
     events_t events;
     active_t active;
+    layer_flags_t flags;
 } layer_result_t;
 #define WAIT_IDLE 0
 
@@ -124,33 +131,6 @@ static void pop_layer() {
     }
 }
 
-static inline uint32_t timediff(uint32_t a, uint32_t b) {
-    uint32_t diff = a - b;
-    if (diff > RTC_MAX_COUNT) {
-        diff -= RTC_MAX_COUNT;
-    }
-    return diff;
-}
-
-static int rtc_rate(layer_result_t *state, uint32_t cyc, uint32_t *prev_time) {
-    // TODO: How to re-enable this?
-    // if (!(state->events & (EVENTS_RTC | EVENTS_RESET))) {
-    //     return 0;
-    // }
-    uint32_t rtc_alarm = state->rtc_now + cyc;
-    if (rtc_alarm > RTC_MAX_COUNT) {
-        rtc_alarm -= RTC_MAX_COUNT;
-    }
-    if (rtc_alarm > 0 && (!state->rtc_alarm || (timediff(rtc_alarm, state->rtc_now) < timediff(state->rtc_alarm, state->rtc_now)))) {
-        state->rtc_alarm = rtc_alarm;
-    }
-    if (timediff(state->rtc_now, *prev_time) >= cyc) {
-        *prev_time = state->rtc_now;
-        return 1;
-    }
-    return 0;
-}
-
 static void layer_next(layer_result_t *state, int next) {
     if (next < MAX_LAYERS && g_layers[next]) {
         g_layers[next](state, &g_layers[next], next + 1);
@@ -158,37 +138,9 @@ static void layer_next(layer_result_t *state, int next) {
 }
 
 static layer_result_t run_layers(events_t events) {
-    layer_result_t state = { R32_RTC_CNT_32K, 0, events, 0 };
+    layer_result_t state = { events, 0, 0 };
     layer_next(&state, 0);
     return state;
-}
-
-#pragma endregion
-
-#pragma region RTC
-
-__INTERRUPT
-__HIGH_CODE
-void RTC_IRQHandler() {
-	// clear trigger flag
-	R8_RTC_FLAG_CTRL = RB_RTC_TRIG_CLR;
-    g_events |= EVENTS_RTC;
-}
-
-static void RtcLayer(layer_result_t *state, void *self, int next) {
-    if (state->events & EVENTS_RESET) {
-        LSIEnable(); // Disable LSE, enable LSI
-        RTCInit(); // Set the RTC counter to 0 and enable RTC Trigger
-        SleepInit();
-    }
-    layer_next(state, next);
-    uint32_t alarm = state->rtc_alarm;
-    if (alarm > 0) {
-        SYS_SAFE_ACCESS
-        (
-            R32_RTC_TRIG = alarm;
-        );
-    }
 }
 
 #pragma endregion
@@ -284,63 +236,133 @@ static chunk_t pack_fb_row(framebuffer_t fb, int chunk) {
 	return ret;
 }
 
-#define RR_BASE 1500
+typedef enum {
+    // Which framebuffer is currently being drawn
+    DRAW_FB = (1 << 0),
+    // If set, the framebuffer is ready to be swapped in at the next opportunity
+    DRAW_READY = (1 << 1),
+    // If set, a draw has completed and a new framebuffer can be prepared
+    DRAW_COMPLETE = (1 << 2),
+} draw_state_t;
+
+typedef enum {
+    // If set, variable refresh rate is enabled. This will skip columns with no lit pixels,
+    // improving brightness for low-duty-cycle content.
+    SCREEN_VRR = (1 << 0),
+} screen_flags_t;
+
+typedef struct {
+    framebuffer_t fb;
+    uint32_t tmr_period;
+    screen_flags_t flags;
+    uint8_t brightness;
+} frame_data_t;
+
 #define RR_DIV 8
 
-static framebuffer_t active_fb = {};
-static int active_fb_chunk = 0;
-static chunk_t prev_chunk = {};
-static int chunk_wait = 0;
+static frame_data_t frame_data[2] = {0};
+static volatile draw_state_t draw_state = 0;
 
-static int g_dim = RR_DIV - 1;
+static int _fb_idx = 0;
+static chunk_t _fb_prev = {};
+static int _fb_wait = 0;
+static int _fb_lit_cols = 0;
+
+static inline uint32_t RefreshRateHz(int freq) {
+    return FUNCONF_SYSTEM_CORE_CLOCK / (RR_DIV * FB_NCOL * freq);
+}
+
+static framebuffer_t * DrawFrame(layer_result_t *state, int freq, uint8_t brightness, screen_flags_t flags) {
+    state->active |= ACTIVE_SCREEN;
+    if (brightness > RR_DIV-1) {
+        brightness = RR_DIV-1;
+    }
+    draw_state_t ds = draw_state;
+    if (ds & DRAW_COMPLETE) {
+        draw_state = ds & ~DRAW_COMPLETE;
+        frame_data_t *fd = &frame_data[~ds & DRAW_FB];
+        fd->tmr_period = RefreshRateHz(freq);
+        fd->brightness = brightness;
+        fd->flags = flags;
+        state->flags |= LF_DRAWING;
+        return &fd->fb;
+    }
+    return NULL;
+}
+
+static uint32_t lag_frames = 0;
 
 __INTERRUPT
 __HIGH_CODE
 void TMR0_IRQHandler() {
-	int status = R8_TMR0_INT_FLAG;
-
+	R8_TMR0_INT_FLAG = R8_TMR0_INT_FLAG; // acknowledge
     // Suspend interrupts to avoid glitches during button presses
     uint32_t irqs = NVIC_get_enabled_IRQs();
     NVIC_clear_all_IRQs_except(0);
-    if (chunk_wait == g_dim) {
-        R32_PA_DIR &= ~prev_chunk.pa_mode;
-        R32_PA_OUT &= ~prev_chunk.pa_val;
-        R32_PB_DIR &= ~prev_chunk.pb_mode;
-        R32_PB_OUT &= ~prev_chunk.pb_val;
+
+    frame_data_t *fd = &frame_data[draw_state & DRAW_FB];
+
+    if (_fb_wait == fd->brightness) {
+        R32_PA_OUT &= ~_fb_prev.pa_val;
+        R32_PB_OUT &= ~_fb_prev.pb_val;
+        R32_PA_DIR &= ~_fb_prev.pa_mode;
+        R32_PB_DIR &= ~_fb_prev.pb_mode;
+
+        if (_fb_idx == 0 && _fb_lit_cols >= FB_NCOL) {
+            _fb_lit_cols -= FB_NCOL;
+            draw_state_t state = draw_state;
+            // If the _READY bit is set, swap framebuffers
+            if (state & DRAW_READY) {
+                draw_state = DRAW_COMPLETE | (~DRAW_READY & (state ^ DRAW_FB));
+                uint32_t new_period = frame_data[~state & DRAW_FB].tmr_period;
+                if (new_period) {
+                    R32_TMR0_CNT_END = new_period;
+                } else {
+                    R8_TMR0_CTRL_MOD = 0;
+                    NVIC_restore_IRQs(irqs);
+                    return;
+                }
+            } else {
+                draw_state = DRAW_COMPLETE | state;
+                lag_frames++;
+            }
+        }
     }
 
-    if (chunk_wait == 0) {
-        chunk_t chunk = pack_fb_row(active_fb, active_fb_chunk);
+    if (_fb_wait == 0) {
+        chunk_t chunk;
+        screen_flags_t has_vrr = fd->flags & SCREEN_VRR;
+        do {
+            chunk = pack_fb_row(fd->fb, _fb_idx);
+            _fb_idx = (_fb_idx + 1) % FB_NCOL;
+        } while (has_vrr && chunk.on_count == 0 && _fb_idx != 0);
         R32_PA_DIR |= chunk.pa_mode;
-        R32_PA_OUT |= chunk.pa_val;
         R32_PB_DIR |= chunk.pb_mode;
+        R32_PA_OUT |= chunk.pa_val;
         R32_PB_OUT |= chunk.pb_val;
-        prev_chunk = chunk;
-        active_fb_chunk = (active_fb_chunk + 1) % FB_NCOL;
-        chunk_wait = RR_DIV - 1;
+        _fb_wait = RR_DIV - 1;
+        _fb_lit_cols++;
+        _fb_prev = chunk;
     } else {
-        chunk_wait--;
+        _fb_wait--;
     }
-	R8_TMR0_INT_FLAG = status; // acknowledge
     NVIC_restore_IRQs(irqs);
 }
 
-static int screen_irq_active = 0;
-
 static void ScreenLayer(layer_result_t *state, void *self, int next) {
     if (state->events & EVENTS_RESET) {
-        R32_TMR0_CNT_END = FUNCONF_SYSTEM_CORE_CLOCK / (RR_BASE * RR_DIV);
-        R8_TMR0_CTRL_MOD = RB_TMR_COUNT_EN;
+        R32_TMR0_CNT_END = RefreshRateHz(50); // default 50Hz
         R8_TMR0_INTER_EN = RB_TMR_IE_CYC_END;
+        NVIC_EnableIRQ(TMR0_IRQn);
     }
     layer_next(state, next);
-    if ((state->active & ACTIVE_SCREEN) ^ screen_irq_active) {
-        if (screen_irq_active) {
-            NVIC_DisableIRQ(TMR0_IRQn);
-        } else {
-            NVIC_EnableIRQ(TMR0_IRQn);
-        }
-        screen_irq_active ^= ACTIVE_SCREEN;
+    if (state->flags & LF_DRAWING) {
+        draw_state |= DRAW_READY;
+    }
+    if (state->active & ACTIVE_SCREEN) {
+        R8_TMR0_CTRL_MOD = RB_TMR_COUNT_EN;
+    } else {
+        frame_data[~draw_state & DRAW_FB].tmr_period = 0;
     }
 }
 
@@ -417,7 +439,7 @@ static void ButtonsLayer(layer_result_t *state, void *self, int next) {
 
 #pragma region Game-of-life
 
-static void gol() {
+static void gol(framebuffer_t active_fb) {
     framebuffer_t fb2 = {0};
     for (int x = 0; x < MATRIX_NCOL; x++) {
         for (int y = 0; y < MATRIX_NROW; y++) {
@@ -468,30 +490,26 @@ uint8_t rand8(void)
     return lfsr&NOISE_MASK;
 }
 
-static void gol_rand() {
+static void gol_rand(framebuffer_t active_fb) {
     lfsr = R32_RTC_CNT_32K;
 	for (int i = 0; i < MATRIX_NCOL; i++) {
 		active_fb[i] = rand8() | (rand8()<<8);
 	}
 }
 
-#define RTC_RATE(hz)  (RTC_FREQ/(hz))
-
-static uint32_t gol_time = 0;
+static framebuffer_t gol_fb;
 
 static void GolLayer(layer_result_t *state, void *self, int next) {
-    // Request to the ScreenLayer to turn on the LED screen
-    state->active |= ACTIVE_SCREEN;
     // If KEY1 is pressed this loop...
     if (state->events & EVENTS_RESET) {
         // Initialize the board
-        gol_rand();
+        gol_rand(gol_fb);
     }
-    // If `gol_time` was at least 1/50th of a second ago...
-    // (this will also set state->rtc_alarm to wake up at the right time)
-    if (rtc_rate(state, RTC_RATE(50), &gol_time)) {
+    framebuffer_t * active_fb = DrawFrame(state, 50, 0, SCREEN_VRR);
+    if (active_fb) {
         // Run an iteration of the game
-        gol();
+        gol(gol_fb);
+        memcpy(*active_fb, gol_fb, sizeof(gol_fb));
     }
     // Allow layers later in the stack to make their own changes
     layer_next(state, next);
@@ -506,12 +524,17 @@ static int bounce_x = MATRIX_NCOL/2;
 static int bounce_y = MATRIX_NROW/2;
 static int bounce_dir = 0;
 
-#define BALL_H 3
-#define BALL_W 3
+#define BALL_H 5
+#define BALL_W 5
+
+static int bounce_toggle = 1;
 
 static void BounceLayer(layer_result_t *state, void *self, int next) {
-    state->active |= ACTIVE_SCREEN;
-    if (rtc_rate(state, RTC_RATE(20), &bounce_time)) {
+    if (state->events & EVENTS_KEY2) {
+        bounce_toggle = !bounce_toggle;
+    }
+    framebuffer_t * active_fb = DrawFrame(state, 30, 0, bounce_toggle ? SCREEN_VRR : 0);
+    if (active_fb) {
         bounce_x += (bounce_dir & 1) ? 1 : -1;
         bounce_y += (bounce_dir & 2) ? 1 : -1;
         if (bounce_x <= BALL_W/2 || bounce_x >= MATRIX_NCOL-(BALL_W/2)-1) {
@@ -520,14 +543,14 @@ static void BounceLayer(layer_result_t *state, void *self, int next) {
         if (bounce_y <= BALL_H/2 || bounce_y >= MATRIX_NROW-(BALL_H/2)-1) {
             bounce_dir ^= 2;
         }
-        memset(active_fb, 0, sizeof(active_fb));
+        memset(*active_fb, 0, sizeof(*active_fb));
         uint16_t v = ((1 << BALL_H)-1) << (bounce_y - (BALL_H/2));
         for (int i = -BALL_W/2; i < (BALL_W/2)+1; i++) {
             int x = bounce_x + i;
             if (x < 0 || x >= MATRIX_NCOL) {
                 continue;
             }
-            active_fb[x] = v;
+            (*active_fb)[x] = v;
         }
     }
     layer_next(state, next);
@@ -543,23 +566,31 @@ extern const int badapple_size;
 static int badapple_frame;
 static uint32_t badapple_time = 0;
 
+#define VID_FRAME_SIZE  (FB_NCOL * 3)
+
 static void BadappleLayer(layer_result_t *state, void *self, int next) {
-    state->active |= ACTIVE_SCREEN;
     if (state->events & EVENTS_RESET) {
         badapple_frame = 0;
     }
-    if (rtc_rate(state, RTC_RATE(30), &badapple_time)) {
-        int frame_start = badapple_frame * 22 * 3;
-        for (int i = 0; i < 22; i++) {
-            int chunk_start = frame_start + i*3;
-            uint16_t b0 = badapple[chunk_start];
-            uint16_t b1 = badapple[chunk_start + 1];
-            uint16_t b2 = badapple[chunk_start + 2];
-            int chunk = i*2;
-            active_fb[chunk] = b0 | (b1 << 8);
-            active_fb[chunk + 1] = ((b1>>3) & 0b11111) | (b2 << 5);
+    framebuffer_t * active_fb = DrawFrame(state, 60, 0, 0);
+    if (active_fb) {
+        badapple_time++;
+        if (badapple_time >= 2) {
+            badapple_time = 0;
+            for (int i = 0; i < FB_NCOL; i++) {
+                int chunk_start = badapple_frame + i*3;
+                uint32_t b0 = badapple[chunk_start];
+                uint16_t b1 = badapple[chunk_start + 1];
+                uint16_t b2 = badapple[chunk_start + 2];
+                int chunk = i*2;
+                (*active_fb)[chunk] = b0 | (b1 << 8);
+                (*active_fb)[chunk + 1] = ((b1>>3) & 0b11111) | (b2 << 5);
+            }
+            badapple_frame = (badapple_frame + VID_FRAME_SIZE) % badapple_size;
+        } else {
+            // Use the previous frame again
+            state->flags &= ~LF_DRAWING;
         }
-        badapple_frame = (badapple_frame + 1) % badapple_size;
     }
     layer_next(state, next);
 }
@@ -570,9 +601,6 @@ static void BtlLayer(layer_result_t *state, void *self, int next) {
     if (state->events & EVENTS_KEY2 && funDigitalRead(PIN_KEY1)) {
         DCDCEnable(); // this seems to be needed!?
         jump_isprom();
-    }
-    if (state->events & EVENTS_KEY2) {
-        g_dim = (g_dim + 1) % RR_DIV;
     }
     layer_next(state, next);
 }
@@ -597,13 +625,10 @@ static void CtrlLayer(layer_result_t *state, void *self, int next) {
 
 int main() {
     SystemInit();
-    push_layer(&RtcLayer);
     push_layer(&ButtonsLayer);
     push_layer(&ScreenLayer);
     push_layer(&BtlLayer);
     push_layer(&CtrlLayer);
-    // push_layer(&GolLayer);
-    // push_layer(&BounceLayer);
 
     run_layers(EVENTS_RESET);
     while (1) {
@@ -611,9 +636,9 @@ int main() {
         if (state.active) {
             __WFI();
         } else {
-            BigSleep(0); // TODO: determine a good power plan here - what RAM do we keep, if any?
-            __WFI();
+            BigSleep(RB_PWR_RAM2K); // TODO: determine a good power plan here - what RAM do we keep, if any?
             DCDCEnable();
+            run_layers(EVENTS_RESET);
         }
     }
 }
