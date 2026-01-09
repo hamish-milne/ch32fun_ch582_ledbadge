@@ -397,7 +397,7 @@ target("ledbadge", function ()
     set_kind("binary")
     add_options("target_mcu")
     add_files("./ch32fun.ld", { rules = {"generate-ld", override = true} })
-    add_files("./ledbadge2.c", "./badapple.c", "./ch32fun/ch32fun/ch32fun.c")
+    add_files("./ledbadge2.c", "./badapple.c", "./font.c", "./ch32fun/ch32fun/ch32fun.c")
     add_includedirs(".", "./ch32fun/ch32fun")
     add_configfiles("./config.h.in", { prefixdir = ".." })
 

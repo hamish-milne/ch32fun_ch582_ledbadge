@@ -605,6 +605,36 @@ static void BadappleLayer(layer_result_t *state, void *self, int next) {
 
 #pragma endregion
 
+#pragma region Font
+
+extern const char font[];
+extern const int font_size;
+#define FONT_WIDTH  6
+
+static const char *text_to_display = "CH32FUN";
+static uint8_t text_x = 1;
+static uint8_t text_y = 2;
+
+static void FontLayer(layer_result_t *state, void *self, int next) {
+    uint16_t * active_fb = DrawFrame(state, 100, 0, SCREEN_VRR);
+    if (active_fb) {
+        memset(active_fb, 0, sizeof(framebuffer_t));
+        int x = text_x;
+        for (const char *p = text_to_display; *p; p++) {
+            char *c = &font[*p * FONT_WIDTH];
+            for (int i = 0; i < FONT_WIDTH; i++, x++) {
+                if (x >= MATRIX_NCOL) {
+                    break;
+                }
+                active_fb[x] |= (uint16_t)c[i] << text_y;
+            }
+        }
+    }
+    layer_next(state, next);
+}
+
+#pragma endregion
+
 static void BtlLayer(layer_result_t *state, void *self, int next) {
     if (state->events & EVENTS_KEY2 && funDigitalRead(PIN_KEY1)) {
         DCDCEnable(); // this seems to be needed!?
@@ -617,6 +647,7 @@ static layer_t ctrl_layers[] = {
     &GolLayer,
     &BounceLayer,
     &BadappleLayer,
+    &FontLayer,
     NULL,
 };
 #define CTRL_LAYERS_COUNT  (sizeof(ctrl_layers)/sizeof(layer_t));
