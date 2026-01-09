@@ -272,7 +272,7 @@ static inline uint32_t RefreshRateHz(int freq) {
     return FUNCONF_SYSTEM_CORE_CLOCK / (RR_DIV * FB_NCOL * freq);
 }
 
-static framebuffer_t * DrawFrame(layer_result_t *state, int freq, uint8_t brightness, screen_flags_t flags) {
+static uint16_t * DrawFrame(layer_result_t *state, int freq, uint8_t brightness, screen_flags_t flags) {
     state->active |= ACTIVE_SCREEN;
     if (brightness > RR_DIV-1) {
         brightness = RR_DIV-1;
@@ -285,7 +285,7 @@ static framebuffer_t * DrawFrame(layer_result_t *state, int freq, uint8_t bright
         fd->brightness = brightness;
         fd->flags = flags;
         state->flags |= LF_DRAWING;
-        return &fd->fb;
+        return fd->fb;
     }
     return NULL;
 }
@@ -513,11 +513,11 @@ static void GolLayer(layer_result_t *state, void *self, int next) {
         // Initialize the board
         gol_rand(gol_fb);
     }
-    framebuffer_t * active_fb = DrawFrame(state, 50, 0, SCREEN_VRR);
+    uint16_t * active_fb = DrawFrame(state, 50, 0, SCREEN_VRR);
     if (active_fb) {
         // Run an iteration of the game
         gol(gol_fb);
-        memcpy(*active_fb, gol_fb, sizeof(gol_fb));
+        memcpy(active_fb, gol_fb, sizeof(gol_fb));
     }
     // Allow layers later in the stack to make their own changes
     layer_next(state, next);
@@ -541,7 +541,7 @@ static void BounceLayer(layer_result_t *state, void *self, int next) {
     if (state->events & EVENTS_KEY2) {
         bounce_toggle = !bounce_toggle;
     }
-    framebuffer_t * active_fb = DrawFrame(state, 30, 0, bounce_toggle ? SCREEN_VRR : 0);
+    uint16_t * active_fb = DrawFrame(state, 30, 0, bounce_toggle ? SCREEN_VRR : 0);
     if (active_fb) {
         bounce_x += (bounce_dir & 1) ? 1 : -1;
         bounce_y += (bounce_dir & 2) ? 1 : -1;
@@ -551,14 +551,14 @@ static void BounceLayer(layer_result_t *state, void *self, int next) {
         if (bounce_y <= BALL_H/2 || bounce_y >= MATRIX_NROW-(BALL_H/2)-1) {
             bounce_dir ^= 2;
         }
-        memset(*active_fb, 0, sizeof(*active_fb));
+        memset(active_fb, 0, sizeof(framebuffer_t));
         uint16_t v = ((1 << BALL_H)-1) << (bounce_y - (BALL_H/2));
         for (int i = -BALL_W/2; i < (BALL_W/2)+1; i++) {
             int x = bounce_x + i;
             if (x < 0 || x >= MATRIX_NCOL) {
                 continue;
             }
-            (*active_fb)[x] = v;
+            active_fb[x] = v;
         }
     }
     layer_next(state, next);
@@ -580,7 +580,7 @@ static void BadappleLayer(layer_result_t *state, void *self, int next) {
     if (state->events & EVENTS_RESET) {
         badapple_frame = 0;
     }
-    framebuffer_t * active_fb = DrawFrame(state, 60, 0, 0);
+    uint16_t * active_fb = DrawFrame(state, 60, 0, 0);
     if (active_fb) {
         badapple_time++;
         if (badapple_time >= 2) {
@@ -591,8 +591,8 @@ static void BadappleLayer(layer_result_t *state, void *self, int next) {
                 uint16_t b1 = badapple[chunk_start + 1];
                 uint16_t b2 = badapple[chunk_start + 2];
                 int chunk = i*2;
-                (*active_fb)[chunk] = b0 | (b1 << 8);
-                (*active_fb)[chunk + 1] = ((b1>>3) & 0b11111) | (b2 << 5);
+                active_fb[chunk] = b0 | (b1 << 8);
+                active_fb[chunk + 1] = ((b1>>3) & 0b11111) | (b2 << 5);
             }
             badapple_frame = (badapple_frame + VID_FRAME_SIZE) % badapple_size;
         } else {
