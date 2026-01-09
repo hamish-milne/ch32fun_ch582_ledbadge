@@ -303,6 +303,8 @@ void TMR0_IRQHandler() {
     frame_data_t *fd = &frame_data[draw_state & DRAW_FB];
 
     if (_fb_wait == fd->brightness) {
+        R32_PA_PD_DRV &= ~_fb_prev.pa_val;
+        R32_PB_PD_DRV &= ~_fb_prev.pb_val;
         R32_PA_OUT &= ~_fb_prev.pa_val;
         R32_PB_OUT &= ~_fb_prev.pb_val;
         R32_PA_DIR &= ~_fb_prev.pa_mode;
@@ -340,6 +342,12 @@ void TMR0_IRQHandler() {
         R32_PB_DIR |= chunk.pb_mode;
         R32_PA_OUT |= chunk.pa_val;
         R32_PB_OUT |= chunk.pb_val;
+        // Enable 20mA drive if enough LEDs are on. This prevents dimming
+        // when many LEDs are lit at once.
+        if (chunk.on_count >= 5) {
+            R32_PA_PD_DRV |= chunk.pa_val;
+            R32_PB_PD_DRV |= chunk.pb_val;
+        }
         _fb_wait = RR_DIV - 1;
         _fb_lit_cols++;
         _fb_prev = chunk;
