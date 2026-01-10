@@ -635,6 +635,27 @@ static void FontLayer(layer_result_t *state, void *self, int next) {
 
 #pragma endregion
 
+#pragma region Monitor
+
+static int cpu_usage = 0;
+
+static void MonitorLayer(layer_result_t *state, void *self, int next) {
+    if (state->events & EVENTS_RESET) {
+        SysTick->CTLR = SYSTICK_CTLR_STE; // start systick
+    }
+    layer_next(state, next);
+    if (state->flags & LF_DRAWING) {
+        uint16_t * active_fb = frame_data[~draw_state & DRAW_FB].fb;
+        // Draw CPU usage as a bar at the left side of the screen
+        int usage_rows = (cpu_usage * MATRIX_NROW) / 0x100;
+        active_fb[0] = (1 << usage_rows) - 1;
+        active_fb[1] = (1 << usage_rows) - 1;
+        active_fb[2] = 0xffff;
+    }
+}
+
+#pragma endregion
+
 static void BtlLayer(layer_result_t *state, void *self, int next) {
     if (state->events & EVENTS_KEY2 && funDigitalRead(PIN_KEY1)) {
         DCDCEnable(); // this seems to be needed!?
@@ -667,11 +688,14 @@ int main() {
     push_layer(&ButtonsLayer);
     push_layer(&ScreenLayer);
     push_layer(&BtlLayer);
+    push_layer(&MonitorLayer);
     push_layer(&CtrlLayer);
 
     run_layers(EVENTS_RESET);
     while (1) {
+        uint32_t time0 = SysTick->CNT;
         layer_result_t state = run_layers(EVENTS_NONE);
+        uint32_t time1 = SysTick->CNT;
         if (state.active) {
             __WFI();
         } else {
@@ -679,5 +703,7 @@ int main() {
             DCDCEnable();
             run_layers(EVENTS_RESET);
         }
+        uint32_t time2 = SysTick->CNT;
+        cpu_usage = (0x100 * (time1 - time0)) / (time2 - time0);
     }
 }
