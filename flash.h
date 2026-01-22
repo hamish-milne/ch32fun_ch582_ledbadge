@@ -137,21 +137,20 @@ typedef enum {
 #define FLASH_IS_ACTIVE  RB_ROM_CTRL_EN
 
 FLASH_DECORATOR
-static uint32_t _flash_start(_flash_access_t access) {
-    uint32_t isr = NVIC_get_enabled_IRQs();
+static void _flash_start(_flash_access_t access) {
+    __disable_irq();
     NVIC->IRER[0] = (~0);
     NVIC->IRER[1] = (~0);
     _flash_enable(access);
     R8_FLASH_CTRL = FLASH_CTRL_IN;
     _flash_cmd(FLASH_CMD_START);
-    return isr;
 }
 
 FLASH_DECORATOR
-static void _flash_finish(uint32_t isr) {
+static void _flash_finish() {
     _flash_cmd_end();
     _flash_disable();
-    NVIC_restore_IRQs(isr);
+    __enable_irq();
 }
 
 FLASH_DECORATOR
@@ -283,9 +282,9 @@ static flash_result_t flash_data_read(uint32_t addr, uint8_t *buf, uint32_t len)
     if (res != FLASH_OK) {
         return res;
     }
-    uint32_t isr = _flash_start(FLASH_READ);
+    _flash_start(FLASH_READ);
     _flash_read_bytes(addr, buf, len);
-    _flash_finish(isr);
+    _flash_finish();
     return FLASH_OK;
 }
 
@@ -295,9 +294,9 @@ static flash_result_t flash_data_write(uint32_t addr, const uint8_t *buf, uint32
     if (res != FLASH_OK) {
         return res;
     }
-    uint32_t isr = _flash_start(FLASH_WRITE);
+    _flash_start(FLASH_WRITE);
     res = _flash_write_bytes(addr, buf, len);
-    _flash_finish(isr);
+    _flash_finish();
     return res;
 }
 
@@ -307,22 +306,22 @@ static flash_result_t flash_data_erase(uint32_t addr, uint32_t length) {
     if (res != FLASH_OK) {
         return res;
     }
-    uint32_t isr = _flash_start(FLASH_WRITE);
+    _flash_start(FLASH_WRITE);
     res = _flash_erase(FLASH_WRITE, addr, length);
-    _flash_finish(isr);
+    _flash_finish();
     return res;
 }
 
 FLASH_DECORATOR
 static uint64_t flash_uid_read() {
-    uint32_t isr = _flash_start(FLASH_READ);
+    _flash_start(FLASH_READ);
     _flash_addr(FLASH_READ, FLASH_CMD_READ_UID, 0);
     uint64_t uid = 0;
     uint8_t *bytes = (uint8_t*)&uid;
     for (int i = 0xf; i >= 0; i--) {
         bytes[i & 7] ^= _flash_read_byte();
     }
-    _flash_finish(isr);
+    _flash_finish();
     return uid;
 }
 
@@ -336,10 +335,10 @@ typedef union {
 FLASH_DECORATOR
 static mac_addr_t flash_mac_read() {
     mac_addr_t mac;
-    uint32_t isr = _flash_start(FLASH_READ);
+    _flash_start(FLASH_READ);
     _flash_read_words(FLASH_MAC_ADDR_OFFSET | 0x80000, mac.words, sizeof(mac.words) / sizeof(uint32_t));
     _flash_cmd_end();
-    _flash_finish(isr);
+    _flash_finish();
     return mac;
 }
 
@@ -349,9 +348,9 @@ static flash_result_t flash_code_write(uint32_t addr, const uint32_t *buf, uint3
     if (res != FLASH_OK) {
         return res;
     }
-    uint32_t isr = _flash_start(FLASH_WRITE | FLASH_CODE_AREA);
+    _flash_start(FLASH_WRITE | FLASH_CODE_AREA);
     res = _flash_write_words(addr, buf, len);
-    _flash_finish(isr);
+    _flash_finish();
     return res;
 }
 
@@ -361,9 +360,9 @@ static flash_result_t flash_code_erase(uint32_t addr, uint32_t length) {
     if (res != FLASH_OK) {
         return res;
     }
-    uint32_t isr = _flash_start(FLASH_WRITE | FLASH_CODE_AREA);
+    _flash_start(FLASH_WRITE | FLASH_CODE_AREA);
     res = _flash_erase(FLASH_WRITE | FLASH_CODE_AREA, addr, length);
-    _flash_finish(isr);
+    _flash_finish();
     return res;
 }
 
@@ -373,26 +372,26 @@ static flash_result_t flash_code_read(uint32_t addr, uint32_t *buf, uint32_t len
     if (res != FLASH_OK) {
         return res;
     }
-    uint32_t isr = _flash_start(FLASH_READ | FLASH_CODE_AREA);
+    _flash_start(FLASH_READ | FLASH_CODE_AREA);
     _flash_read_words(addr, buf, len);
-    _flash_finish(isr);
+    _flash_finish();
     return FLASH_OK;
 }
 
 FLASH_DECORATOR
 static void flash_power_set(bool power_up) {
-    uint32_t isr = _flash_start(FLASH_READ);
+    _flash_start(FLASH_READ);
     _flash_cmd(power_up ? FLASH_CMD_POWER_UP : FLASH_CMD_POWER_DOWN);
-    _flash_finish(isr);
+    _flash_finish();
 }
 
 FLASH_DECORATOR
 static void flash_reset() {
-    uint32_t isr = _flash_start(FLASH_READ);
+    _flash_start(FLASH_READ);
     _flash_cmd(FLASH_CMD_SWR0);
     _flash_cmd_end();
     _flash_cmd(FLASH_CMD_SWR1);
-    _flash_finish(isr);
+    _flash_finish();
 }
 
 typedef enum {
@@ -411,7 +410,7 @@ typedef enum {
 
 FLASH_DECORATOR
 static flash_result_t flash_lock_set(flash_lock_t lock) {
-    uint32_t isr = _flash_start(FLASH_WRITE);
+    _flash_start(FLASH_WRITE);
     _flash_cmd(FLASH_CMD_WRITE_ENABLE);
     _flash_cmd_end();
     _flash_cmd(FLASH_CMD_SET_LOCK);
@@ -427,6 +426,6 @@ static flash_result_t flash_lock_set(flash_lock_t lock) {
     }
     _flash_write_byte((uint8_t)lockcmd);
     flash_result_t res = _flash_commit();
-    _flash_finish(isr);
+    _flash_finish();
     return res;
 }
