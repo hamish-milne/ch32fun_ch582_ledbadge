@@ -139,8 +139,6 @@ typedef enum {
 FLASH_DECORATOR
 static void _flash_start(_flash_access_t access) {
     __disable_irq();
-    NVIC->IRER[0] = (~0);
-    NVIC->IRER[1] = (~0);
     _flash_enable(access);
     R8_FLASH_CTRL = FLASH_CTRL_IN;
     _flash_cmd(FLASH_CMD_START);
