@@ -30,232 +30,6 @@ toolchain("embed", function()
     add_linkdirs(os.getenv("TARGET_LIBDIR"))
 end)
 
-local arch_abi = {
-    rv32ec = "ilp32e",
-    rv32ec_zmmul = "ilp32e",
-    rv32imac = "ilp32",
-    rv32imafc = "ilp32f",
-}
-
-local ch32_packages = {
-    ["CHV300([234567])"] = {
-        arch = "rv32ec_zmmul",
-        CH32V00x = true,
-        variants = {{
-            ["3"] = {
-                FLASH_SIZE_KB = 16,
-                RAM_SIZE_KB = 2,
-                arch = "rv32ec",
-            },
-            ["2"] = {
-                FLASH_SIZE_KB = 16,
-                RAM_SIZE_KB = 4,
-            },
-            ["[45]"] = {
-                FLASH_SIZE_KB = 32,
-                RAM_SIZE_KB = 6,
-            },
-            ["[67]"] = {
-                FLASH_SIZE_KB = 62,
-                RAM_SIZE_KB = 8,
-            },
-        }},
-    },
-    ["CHV103([RC][68])"] = {
-        arch = "rv32imac",
-        CH32V10x = true,
-        variants = {{
-            ["[RC]8"] = {
-                FLASH_SIZE_KB = 64,
-                RAM_SIZE_KB = 20,
-            },
-            ["C6"] = {
-                FLASH_SIZE_KB = 32,
-                RAM_SIZE_KB = 10,
-            },
-        }}
-    },
-    ["CHX03[35][CFGR][678]"] = {
-        arch = "rv32imac",
-        CH32X03x = true,
-        FLASH_SIZE_KB = 62,
-        RAM_SIZE_KB = 20,
-    },
-    ["CHL103[CFGK]8"] = {
-        arch = "rv32imac",
-        CH32L103 = true,
-        FLASH_SIZE_KB = 62,
-        RAM_SIZE_KB = 20,
-    },
-    ["CHV20([38])[CFGKRW]([68BW])"] = {
-        arch = "rv32imac",
-        CH32V20x = true,
-        variants = {{
-            ["3"] = {
-                CH32V20x_D6 = true,
-            },
-            ["8"] = {
-                CH32V20x_D8 = true,
-            },
-        },{
-            ["6"] = {
-                FLASH_SIZE_KB = 32,
-                RAM_SIZE_KB = 10,
-                EXT_ORIGIN = "0x08008000",
-                EXT_SIZE_KB = 192,
-            },
-            ["8"] = {
-                FLASH_SIZE_KB = 64,
-                RAM_SIZE_KB = 20,
-                EXT_ORIGIN = "0x08010000",
-                EXT_SIZE_KB = 160,
-            },
-            ["[BW]"] = {
-                FLASH_SIZE_KB = 128,
-                RAM_SIZE_KB = 32,
-                EXT_ORIGIN = "0x08020000",
-                EXT_SIZE_KB = 352,
-            },
-        }},
-    },
-    ["CH32V30([37])[CFRVW]([BC])"] = {
-        arch = "rv32imafc",
-        CH32V30x = true,
-        variants = {{
-            ["3"] = {
-                CH32V30x_D8 = true,
-            },
-            ["7"] = {
-                CH32V30x_D8C = true,
-            },
-        },{
-            ["C"] = function (option)
-                local memory_split = option:dep("memory_split"):value()
-                return ({{
-                    FLASH_SIZE_KB = 192,
-                    RAM_SIZE_KB = 128,
-                },{
-                    FLASH_SIZE_KB = 224,
-                    RAM_SIZE_KB = 96,
-                },{
-                    FLASH_SIZE_KB = 256,
-                    RAM_SIZE_KB = 64,
-                },{
-                    FLASH_SIZE_KB = 288,
-                    RAM_SIZE_KB = 32,
-                }})[memory_split]
-            end,
-            ["B"] = {
-                FLASH_SIZE_KB = 128,
-                RAM_SIZE_KB = 32,
-            },
-        }},
-    },
-    ["CH5([789])"] = {
-        arch = "rv32imac",
-        CH5xx = true,
-        HAS_HIGHCODE = true,
-        variants = {{
-            ["7([0123])"] = {
-                CH57x = true,
-                variants = {{
-                    ["[02]"] = {
-                        FLASH_SIZE_KB = 240,
-                        RAM_SIZE_KB = 12,
-                        CH570_CH572 = true,
-                    },
-                    ["1"] = {
-                        FLASH_SIZE_KB = 192,
-                        RAM_SIZE_KB = 18,
-                        HAS_DMA_QUIRK = true,
-                        CH571_CH573 = true,
-                    },
-                    ["3"] = {
-                        FLASH_SIZE_KB = 448,
-                        RAM_SIZE_KB = 18,
-                        HAS_DMA_QUIRK = true,
-                        CH571_CH573 = true,
-                    },
-                }},
-            },
-            ["8([2345])"] = {
-                CH58x = true,
-                FLASH_SIZE_KB = 448,
-                variants = {{
-                    ["[23]"] = {
-                        RAM_SIZE_KB = 32,
-                        CH582_CH583 = true,
-                    },
-                    ["4"] = {
-                        RAM_SIZE_KB = 96,
-                        CH584_CH585 = true,
-                    },
-                    ["5"] = {
-                        RAM_SIZE_KB = 128,
-                        CH584_CH585 = true,
-                    },
-                }},
-            },
-            ["9([12])"] = {
-                CH59x = true,
-                CH591_CH592 = true,
-                RAM_SIZE_KB = 26,
-                variants = {{
-                    ["1"] = {
-                        FLASH_SIZE_KB = 192,
-                    },
-                    ["2"] = {
-                        FLASH_SIZE_KB = 448,
-                    },
-                }},
-            },
-        }},
-    },
-    ["CH32H41([567])"] = {
-        arch = "rv32imafc",
-        CH32H4x = true,
-        RAM_SIZE_KB = 512,
-        HAS_COUPLED_RAM = true,
-        variants = {{
-            ["[57]"] = {
-                FLASH_SIZE_KB = 960,
-            },
-            ["6"] = {
-                FLASH_SIZE_KB = 480,
-            },
-        }},
-    },
-}
-
-local function getFindResult(s, e, ...)
-    return s, e, {...}
-end
-
-local function match_ch32_package_part(target, variants, str, idx, parent)
-    for pattern, info in pairs(variants) do
-        local s, e, specs = getFindResult(string.find(str, "^"..pattern, idx))
-        if s then
-            local result = table.join(parent, info)
-            result.variants = nil
-            if info.variants then
-                for vidx, spec in ipairs(specs) do
-                    local variant = info.variants[vidx]
-                    if type(variant) == "function" then
-                        variant = variant(target)
-                    end
-                    -- all variant specs need to be matched; no backtracking
-                    result, e = match_ch32_package_part(target, variant, str, e, result)
-                    if not result then
-                        return nil
-                    end
-                end
-            end
-            return result, e
-        end
-    end
-    return nil
-end
-
 option("memory_split", function()
     set_default(0)
     set_showmenu(true)
@@ -270,16 +44,39 @@ option("target_mcu", function()
     set_description("Target MCU to build for")
     add_deps("memory_split")
     after_check(function (option)
+
+        local function run_shell(cmd, args)
+            local pipe = import("core.base.pipe")
+            local bytes = import("core.base.bytes")
+            local rpipe, wpipe = pipe.openpair()
+            os.execv(cmd, args, { stdout = wpipe })
+            wpipe:close()
+            local output = bytes(1024)
+            rpipe:read(output, 1024)
+            rpipe:close()
+            return output:str()
+        end 
+
         local targetMcu = option:value()
-        local mcuInfo = match_ch32_package_part(option, ch32_packages, targetMcu, 1, {})
-        if not mcuInfo then
-            raise("Unknown MCU "..targetMcu)
+        local vars = run_shell("sh", {"./ch32fun/ch32fun/parse_mcu_package.sh", targetMcu, option:dep("memory_split"):value()})
+        local mcuInfo = {}
+        for line in vars:gmatch("[^\n]+") do
+            local key, value = line:match("([^=]+)=(.+)")
+            if key and value then
+                mcuInfo[key] = value
+            end
         end
-        local archFlags = "-march="..mcuInfo.arch.." -mabi="..arch_abi[mcuInfo.arch]
+        local archFlags = "-march="..mcuInfo.ARCH.." -mabi="..mcuInfo.ABI
         option:add("cflags", archFlags)
         option:add("ldflags", archFlags)
-        for k,v in pairs(mcuInfo) do
-            option:set("configvar", k, v)
+        for _, key in ipairs({"FLASH_SIZE_KB", "RAM_SIZE_KB", "EXT_ORIGIN", "EXT_SIZE_KB"}) do
+            if mcuInfo[key] then
+                option:add("defines", key.."="..mcuInfo[key])
+            end
+        end
+        option:add("defines", mcuInfo.TARGET_MCU)
+        for define in string.gmatch(mcuInfo.DEFINES, "%S+") do
+            option:add("defines", define.."=1")
         end
     end)
 end)
@@ -396,7 +193,7 @@ target("ledbadge", function ()
     set_toolchains("embed")
     set_kind("binary")
     add_options("target_mcu")
-    add_files("./ch32fun.ld", { rules = {"generate-ld", override = true} })
+    add_files("./ch32fun/ch32fun/ch32fun.ld", { rules = {"generate-ld", override = true} })
     add_files("./ledbadge2.c", "./badapple.c", "./font.c", "./ch32fun/ch32fun/ch32fun.c")
     add_includedirs(".", "./ch32fun/ch32fun")
     add_configfiles("./config.h.in", { prefixdir = ".." })
